@@ -52,12 +52,17 @@ window.DB = (function () {
     });
   }
   async function ensureNickname(user) {
-    let nick = user.user_metadata?.nickname || null;
-    if (!nick) {
-      const { data } = await client.from("profiles").select("nickname").eq("id", user.id).single();
-      nick = data?.nickname || null;
+    const { data } = await client.from("profiles").select("nickname").eq("id", user.id).maybeSingle();
+    if (data?.nickname) { remember(user.id, data.nickname); return data.nickname; }
+    /* 老账号缺资料（建表前注册的）：自动补建一份 */
+    let nick = user.user_metadata?.nickname || (user.email ? user.email.split("@")[0] : "用户");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { error } = await client.from("profiles").insert({ id: user.id, nickname: nick, joined: new Date().toISOString().slice(0, 7) });
+      if (!error) break;
+      if (!/duplicate|unique/i.test(String(error.message))) throw error;
+      nick = nick + (crypto.getRandomValues(new Uint32Array(1))[0] % 900 + 100);
     }
-    if (nick) remember(user.id, nick);
+    remember(user.id, nick);
     return nick;
   }
   function remember(id, nick) { names[id] = nick; uids[nick] = id; }
@@ -79,7 +84,7 @@ window.DB = (function () {
   }
 
   /* ---------- 作品 ---------- */
-  const WORK_SEL = "*, profiles!works_author_fk(nickname)";
+  const WORK_SEL = "*, profiles!author(nickname)";
   function workToApp(row) {
     return {
       dbid: row.id,
@@ -159,7 +164,7 @@ window.DB = (function () {
   async function bump(dbid, kind) { const { error } = await client.rpc(kind === "likes" ? "bump_work_likes" : kind === "dl" ? "bump_work_downloads" : "bump_work_views", kind === "likes" ? { wid: dbid, delta: 1 } : { wid: dbid }); if (error) console.warn(error); }
 
   /* ---------- 订单 / 已购 ---------- */
-  const ORD_SEL = "*, works(title), buyer_p:profiles!orders_buyer_fk(nickname), seller_p:profiles!orders_seller_fk(nickname)";
+  const ORD_SEL = "*, works(title), buyer_p:profiles!buyer(nickname), seller_p:profiles!seller(nickname)";
   function orderToTx(row) {
     return {
       id: row.id, dbid: row.id,
@@ -202,7 +207,7 @@ window.DB = (function () {
   }
 
   /* ---------- 社区动态 ---------- */
-  const FEED_SEL = "*, profiles!feed_posts_author_fk(nickname), post_likes(user_id), post_comments(*, profiles!post_comments_author_fk(nickname))";
+  const FEED_SEL = "*, profiles!author(nickname), post_likes(user_id), post_comments(*, profiles!author(nickname))";
   function feedToApp(row, myUid, rel) {
     return {
       dbid: row.id, id: row.id, a: row.profiles?.nickname || "?",
@@ -232,7 +237,7 @@ window.DB = (function () {
 
   /* ---------- 作品评论 ---------- */
   async function fetchWorkComments(wid) {
-    const { data, error } = await client.from("work_comments").select("*, profiles!work_comments_author_fk(nickname)").eq("work_id", wid).order("created_at", { ascending: false });
+    const { data, error } = await client.from("work_comments").select("*, profiles!author(nickname)").eq("work_id", wid).order("created_at", { ascending: false });
     if (error) throw error;
     return (data || []).map((c) => ({ a: c.profiles?.nickname || "?", t: c.body, time: (c.created_at || "").slice(0, 10) }));
   }
@@ -267,7 +272,7 @@ window.DB = (function () {
 
   /* ---------- 私信 ---------- */
   async function fetchMessages(convKey) {
-    const { data, error } = await client.from("messages").select("*, profiles!messages_sender_fk(nickname)").eq("conv", convKey).order("created_at", { ascending: true }).limit(200);
+    const { data, error } = await client.from("messages").select("*, profiles!sender(nickname)").eq("conv", convKey).order("created_at", { ascending: true }).limit(200);
     if (error) throw error;
     return (data || []).map((m) => ({ a: m.profiles?.nickname || "?", t: m.body, time: (m.created_at || "").slice(5, 16).replace("T", " ") }));
   }
@@ -307,17 +312,17 @@ window.DB = (function () {
     return data || [];
   }
   async function fetchAllWorkComments() {
-    const { data, error } = await client.from("work_comments").select("*, profiles!work_comments_author_fk(nickname)").order("created_at", { ascending: false });
+    const { data, error } = await client.from("work_comments").select("*").order("created_at", { ascending: false });
     if (error) throw error;
     return data || [];
   }
   async function fetchAllReviews() {
-    const { data, error } = await client.from("reviews").select("*, profiles!reviews_author_fk(nickname)").order("created_at", { ascending: false });
+    const { data, error } = await client.from("reviews").select("*, profiles!author(nickname)").order("created_at", { ascending: false });
     if (error) throw error;
     return data || [];
   }
   async function fetchMyMessages(uid) {
-    const { data, error } = await client.from("messages").select("*, profiles!messages_sender_fk(nickname)").or(`sender.eq.${uid},receiver.eq.${uid}`).order("created_at", { ascending: true });
+    const { data, error } = await client.from("messages").select("*, profiles!sender(nickname)").or(`sender.eq.${uid},receiver.eq.${uid}`).order("created_at", { ascending: true });
     if (error) throw error;
     return (data || []).map((m) => ({
       senderUid: m.sender, receiverUid: m.receiver,
@@ -328,7 +333,7 @@ window.DB = (function () {
 
   return {
     init, isOnline, uid, nickOf, uidOf, remember,
-    getSession, signUp, signIn, signOut, onAuth,
+    getSession, signUp, signIn, signOut, onAuth, ensureNickname,
     fetchProfiles, updateProfile, fetchProfile,
     fetchWorks, fetchMyWorks, insertWork, updateWork, setWorkStatus, deleteWork, bump,
     fetchSellerOrders, fetchBuyerOrders, createOrder, confirmOrder, myEarnings,

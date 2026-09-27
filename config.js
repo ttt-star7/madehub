@@ -4,8 +4,8 @@
    3) Project Settings → API：复制 Project URL 和 anon public key 填到下面
    填好后刷新网站即接入真实数据库；留空则站点以“未连接数据库”模式运行。 */
 window.MH_CONFIG = {
-  SUPABASE_URL: "",        // 例如：https://xxxxxxxx.supabase.co
-  SUPABASE_ANON_KEY: "",   // 例如：eyJhbGciOi...（anon public key，可公开）
+  SUPABASE_URL: "https://ztmkawfnnnqupyagkbrp.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_LR2lwQLKf_e3YE0wkH4YeA_p7-jrmSB",
   /* 支付模式：
      demo = 演示支付（真实订单入库，不发生真实扣款，适合上线初期）
      预留：接入易支付/虎皮椒/微信支付后改为对应值，订单状态机不变 */

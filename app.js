@@ -1784,7 +1784,7 @@ async function loadPublic() {
   });
   const [comments, reviews, feed] = await Promise.all([DB.fetchAllWorkComments(), DB.fetchAllReviews(), DB.fetchFeed(MYUID, relTime)]);
   ITEMS.forEach((it) => { it.comments = []; it.reviews = []; });
-  comments.forEach((c) => { const it = ITEMS.find((x) => x.dbid === c.work_id); if (it) it.comments.push({ a: c.profiles?.nickname || "?", t: c.body, time: (c.created_at || "").slice(0, 10) }); });
+  comments.forEach((c) => { const it = ITEMS.find((x) => x.dbid === c.work_id); if (it) it.comments.push({ a: DB.nickOf(c.author) || "?", t: c.body, time: (c.created_at || "").slice(0, 10) }); });
   reviews.forEach((r) => { const it = ITEMS.find((x) => x.dbid === r.work_id); if (it) it.reviews.push({ a: r.profiles?.nickname || "?", s: r.rating, t: r.body, time: (r.created_at || "").slice(0, 10) }); });
   ITEMS.forEach((it) => {
     it.ratingCnt = it.reviews.length;
