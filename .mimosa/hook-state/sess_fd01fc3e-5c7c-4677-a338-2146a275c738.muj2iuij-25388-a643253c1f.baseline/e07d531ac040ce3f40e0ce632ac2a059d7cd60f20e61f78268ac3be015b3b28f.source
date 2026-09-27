@@ -203,52 +203,22 @@ function recordBuy(it, price) { if (!MY.purchased.some((b) => b.id === it.id)) M
 function openPan(it) {
   const link = it.link;
   if (!link || !link.url) { toast("该作品暂无可用链接"); return; }
-  if (!/^https?:\/\//i.test(link.url)) { toast("该作品的链接无效"); return; }
   if (link.code) navigator.clipboard?.writeText(link.code).catch(() => {});
-  window.open(link.url, "_blank", "noopener");
+  window.open(link.url, "_blank");
   it.downloads++;
-  if (DB.isOnline() && it.dbid) DB.bump(it.dbid, "dl");
   toast(link.code ? `已打开${link.pan}，提取码「${link.code}」已自动复制，粘贴即可` : `已打开${link.pan}分享页`);
-}
-function openSite(it) {
-  const u = it.siteUrl || "";
-  if (!validSiteUrl(u)) { toast("该作品的网址无效，请联系创作者"); return; }
-  window.open(u, "_blank", "noopener");
-  it.downloads = (it.downloads || 0) + 1;
-  if (DB.isOnline() && it.dbid) DB.bump(it.dbid, "dl");
-  toast("🌐 已在新标签页打开作品网址");
 }
 let payItemCur = null;
 function openPay(it) {
   payItemCur = it;
   const [g1, g2] = grad(it.g);
-  $("#payItem").innerHTML = `<span class="cov" style="--g1:${g1};--g2:${g2}">${it.emoji}</span><div style="flex:1;min-width:0"><b>${esc(it.title)}</b><small>${esc(it.author)} · ${it.linkKind === "url" ? "网址作品" : esc(it.link?.pan || "")}</small></div><span class="pp">¥${it.price}</span>`;
+  $("#payItem").innerHTML = `<span class="cov" style="--g1:${g1};--g2:${g2}">${it.emoji}</span><div style="flex:1;min-width:0"><b>${esc(it.title)}</b><small>${esc(it.author)} · ${it.link ? esc(it.link.pan) : ""}</small></div><span class="pp">¥${it.price}</span>`;
   const btn = $("#payConfirm");
   btn.disabled = false; btn.classList.remove("done");
   btn.textContent = "确认支付 ¥" + it.price;
   $$("#payMethods .pay-v").forEach((x, i) => x.classList.toggle("on", i === 0));
   openModal("#payModal");
 }
-$("#payConfirm").addEventListener("click", async () => {
-  const it = payItemCur; if (!it || !it.price) return;
-  if (!ME) { openLogin("login"); return; }
-  const btn = $("#payConfirm");
-  btn.disabled = true; btn.textContent = "支付中…";
-  try {
-    /* 演示支付：真实订单入库（不发生真实扣款）；接入真实支付网关后此处替换为下单+回调 */
-    if (DB.isOnline()) { const uid = await DB.uid(); await DB.createOrder(it, uid); }
-    OWNED.add(it.id); recordBuy(it, it.price);
-    btn.classList.add("done"); btn.textContent = "✓ 支付成功";
-    toast("✅ 支付成功，作品已解锁");
-    setTimeout(() => {
-      closeAllModals();
-      if (it.linkKind === "url") openSite(it); else openPan(it);
-    }, 650);
-  } catch (e2) {
-    btn.disabled = false; btn.textContent = "确认支付 ¥" + it.price;
-    toast("支付失败：" + (e2.message || e2));
-  }
-});
 function openDetail(it) {
   const [g1, g2] = grad(it.g);
   const related = ITEMS.filter((x) => x.id !== it.id && x.tags.some((t) => it.tags.includes(t))).slice(0, 3);
@@ -264,9 +234,7 @@ function openDetail(it) {
       <p class="detail-desc">${esc(it.desc)}</p>
       <div style="display:flex;gap:16px"><span class="mini-link" data-share>🔗 分享作品</span><span class="mini-link" data-report>⚠️ 举报</span></div>
       <ul class="meta-list">
-        ${it.linkKind === "url" ? `
-        <li><span>访问方式</span><b>网址直达</b></li>
-        <li><span>访问权限</span><b>${it.price === 0 ? "免费直接访问" : "支付解锁后访问"}</b></li>` : it.link ? `
+        ${it.link ? `
         <li><span>网盘</span><b>${esc(it.link.pan)}</b></li>
         <li><span>提取码</span><b>${it.link.code ? esc(it.link.code) : "无需提取码"}</b></li>
         <li><span>有效期</span><b>${esc(it.link.exp || "长期有效")}</b></li>` : `
@@ -284,13 +252,9 @@ function openDetail(it) {
         </div>`}
         <div class="buy-row">
           <div class="buy-price">${it.price === 0 ? "免费" : "¥" + it.price}<small>${it.price === 0 ? "无需付费，直接获取" : OWNED.has(it.id) ? "已购买 · 永久可用" : "一次购买，永久使用与更新"}</small></div>
-          <button class="btn btn-primary buy-btn" data-buy>${it.price === 0 || OWNED.has(it.id) ? (it.linkKind === "url" ? "打开网站" : "打开网盘") : "付费解锁"}</button>
+          <button class="btn btn-primary buy-btn" data-buy>${it.price === 0 || OWNED.has(it.id) ? "打开网盘" : "付费解锁"}</button>
         </div>
-        <div class="buy-note">${it.price === 0
-          ? (it.linkKind === "url" ? "点击按钮即可直接访问作品网址" : "点击打开网盘链接，提取码将自动复制到剪贴板")
-          : OWNED.has(it.id)
-            ? (it.linkKind === "url" ? "已购买 · 点击按钮访问作品网址" : "已购买 · 点击打开网盘链接，提取码自动复制")
-            : (it.linkKind === "url" ? "支付解锁后即可访问作品网址 · 平台交易保障 · 手续费仅 5%" : "付款后即可打开网盘链接 · 平台交易保障，确认收货后打款 · 手续费仅 5%")}</div>
+        <div class="buy-note">${it.price === 0 ? "点击打开网盘链接，提取码将自动复制到剪贴板" : OWNED.has(it.id) ? "已购买 · 点击打开网盘链接，提取码自动复制" : "付款后即可打开网盘链接 · 平台托管，确认收货后打款 · 手续费仅 5%"}</div>
       </div>
     </aside>
     <section class="detail-extra">
@@ -314,32 +278,19 @@ function openDetail(it) {
     $$(".thumb").forEach((t) => t.classList.toggle("on", t === th));
   });
   $("#detailBody").querySelector("[data-follow]").addEventListener("click", (e) => {
-    if (FOLLOWING.has(it.author)) {
-      FOLLOWING.delete(it.author); e.target.textContent = "+ 关注"; toast("已取消关注 " + it.author);
-      if (DB.isOnline() && MYUID) DB.setFollow(MYUID, it.author, false);
-    } else {
-      FOLLOWING.add(it.author); e.target.textContent = "已关注 ✓"; toast("已关注 " + it.author + "，动态会推送到社区");
-      if (DB.isOnline() && MYUID) DB.setFollow(MYUID, it.author, true);
-    }
+    if (FOLLOWING.has(it.author)) { FOLLOWING.delete(it.author); e.target.textContent = "+ 关注"; toast("已取消关注 " + it.author); }
+    else { FOLLOWING.add(it.author); e.target.textContent = "已关注 ✓"; toast("已关注 " + it.author + "，动态会推送到社区"); }
   });
   $("#detailBody").querySelector("[data-buy]").addEventListener("click", () => {
-    const unlocked = it.price === 0 || OWNED.has(it.id);
-    if (unlocked) {
-      if (it.linkKind === "url") { openSite(it); if (!OWNED.has(it.id)) recordBuy(it, 0); return; }
-      openPan(it);
-      if (!OWNED.has(it.id)) { recordBuy(it, 0); if (DB.isOnline() && it.dbid) DB.bump(it.dbid, "dl"); }
-      return;
-    }
-    if (!ME) { openPay(it); openLogin("login"); return; }
+    if (it.price === 0 || OWNED.has(it.id)) { openPan(it); if (!OWNED.has(it.id)) recordBuy(it, 0); return; }
     openPay(it);
   });
   const dmBtn = $("#detailBody").querySelector("[data-dm]");
   if (dmBtn) dmBtn.addEventListener("click", () => openDM(it.author));
   $("#detailBody").querySelector("[data-share]").addEventListener("click", () => { navigator.clipboard?.writeText(location.href.split("?")[0] + "?view=detail&id=" + it.id).catch(() => {}); toast("🔗 链接已复制，快去分享吧"); });
   $("#detailBody").querySelector("[data-report]").addEventListener("click", () => toast("已收到举报，平台会在 24h 内核实"));
-  const sendCmt = async () => {
+  const sendCmt = () => {
     const v = $("#cmtInput").value.trim(); if (!v) return;
-    if (DB.isOnline() && it.dbid) { try { const u = await DB.uid(); await DB.insertWorkComment(it.dbid, v, u); } catch (e2) { toast("评论同步失败：" + (e2.message || e2)); return; } }
     it.comments.unshift({ a: ME, t: v, time: "刚刚" });
     $("#cmtList").innerHTML = it.comments.map(cmtHTML).join("");
     $("#cmtCnt").textContent = it.comments.length + " 条";
@@ -352,7 +303,7 @@ function openDetail(it) {
 }
 
 /* ---------- 上传向导 ---------- */
-const up = { step: 1, link: { url: "", pan: "", code: "", exp: "长期有效" }, linkMode: "pan", siteUrl: "", cover: 0, tags: [], priceMode: "free", shots: [] };
+const up = { step: 1, link: { url: "", pan: "", code: "", exp: "长期有效" }, cover: 0, tags: [], priceMode: "free", shots: [] };
 const COVERS = [
   ["🧩", 0], ["🚀", 4], ["🎨", 3], ["🤖", 7], ["📦", 10], ["🔮", 6], ["🌿", 5], ["⚡", 1],
 ];
@@ -501,32 +452,16 @@ function auditUpload(kind, apply) {
     }
   }, 1700 + Math.random() * 900);
 }
-/* 上传图片到存储桶：仅接受 data:image/* 内联内容（防 SSRF），路径做白名单清洗 */
-async function pushImage(path, dataURL) {
-  if (typeof dataURL !== "string" || !dataURL.startsWith("data:image/")) throw new Error("仅支持内联图片内容");
-  const safePath = String(path).replace(/[^\w./-]/g, "_");
-  return DB.uploadMedia(safePath, dataURL);
-}
 avFile.addEventListener("change", async () => {
   const f = avFile.files[0]; if (!f) return;
-  let url = await fileToDataURL(f, 320);
-  if (DB.isOnline() && MYUID) { try { url = await pushImage(`avatars/${MYUID}/${Date.now()}.jpg`, url); } catch (e) { toast("图片上传失败：" + (e.message || e)); avFile.value = ""; return; } }
-  auditUpload("av", () => {
-    USERS[ME].avatar = { type: "img", url };
-    if (DB.isOnline() && MYUID) DB.updateProfile(MYUID, { avatar: USERS[ME].avatar }).catch(() => {});
-    renderUserChip(); renderStudio("settings");
-  });
+  const url = await fileToDataURL(f, 320);
+  auditUpload("av", () => { USERS[ME].avatar = { type: "img", url }; renderUserChip(); renderStudio("settings"); });
   avFile.value = "";
 });
 bgFile.addEventListener("change", async () => {
   const f = bgFile.files[0]; if (!f) return;
-  let url = await fileToDataURL(f, 1600);
-  if (DB.isOnline() && MYUID) { try { url = await pushImage(`bgs/${MYUID}/${Date.now()}.jpg`, url); } catch (e) { toast("图片上传失败：" + (e.message || e)); bgFile.value = ""; return; } }
-  auditUpload("bg", () => {
-    USERS[ME].bgImg = url; USERS[ME].bg = null;
-    if (DB.isOnline() && MYUID) DB.updateProfile(MYUID, { bg_img: url, bg: null }).catch(() => {});
-    renderStudio("settings");
-  });
+  const url = await fileToDataURL(f, 1600);
+  auditUpload("bg", () => { USERS[ME].bgImg = url; USERS[ME].bg = null; renderStudio("settings"); });
   bgFile.value = "";
 });
 $("#cropOk").addEventListener("click", () => {
@@ -572,10 +507,7 @@ function updateWizard() {
 }
 function validateStep() {
   let ok = false, msg = "";
-  if (up.step === 1) {
-    ok = up.linkMode === "url" ? validSiteUrl(up.siteUrl) : !!up.link.pan;
-    msg = ok ? "" : up.linkMode === "url" ? "请填写 http(s):// 开头的有效网址" : "请粘贴网盘分享链接";
-  }
+  if (up.step === 1) { ok = !!up.link.pan; msg = ok ? "" : "请粘贴网盘分享链接"; }
   if (up.step === 2) {
     ok = $("#upTitle").value.trim().length > 0 && $("#upDesc").value.trim().length > 0 && up.tags.length > 0;
     msg = ok ? "" : !$("#upTitle").value.trim() ? "请填写标题" : !$("#upDesc").value.trim() ? "请填写功能介绍" : "至少选择 1 个标签";
@@ -613,29 +545,6 @@ $("#panExpiry").addEventListener("click", (e) => {
   const c = e.target.closest("[data-exp]"); if (!c) return;
   up.link.exp = c.dataset.exp;
   $$("#panExpiry .chip").forEach((x) => x.classList.toggle("on", x === c));
-});
-/* Step 1：网盘 / 网址 双模式（网址作品：免费直跳，付费解锁后跳转） */
-function validSiteUrl(v) {
-  try {
-    const u = new URL(v);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
-    const h = u.hostname;
-    if (/^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(h)) return false;
-    if (/^(::1|\[::1\]|\[f[cd])/i.test(h) || /\.local$/i.test(h) || !h.includes(".")) return false;
-    return true;
-  } catch (_) { return false; }
-}
-function applyLinkMode() {
-  if ($("#panFields")) $("#panFields").hidden = up.linkMode !== "pan";
-  if ($("#urlField")) $("#urlField").hidden = up.linkMode !== "url";
-  $$("#linkKindTabs .chip").forEach((x) => x.classList.toggle("on", x.dataset.lk === up.linkMode));
-  validateStep();
-}
-$("#linkKindTabs").addEventListener("click", (e) => { const b = e.target.closest("[data-lk]"); if (!b) return; up.linkMode = b.dataset.lk; applyLinkMode(); });
-$("#siteUrl").addEventListener("input", (e) => {
-  up.siteUrl = e.target.value.trim();
-  $("#siteErr").hidden = !up.siteUrl || validSiteUrl(up.siteUrl);
-  validateStep();
 });
 $("#coverPicker").addEventListener("click", (e) => {
   const b = e.target.closest("[data-cover]"); if (!b) return;
@@ -680,56 +589,37 @@ $("#upPrice").addEventListener("input", () => { validateStep(); renderPreview();
 /* 步骤流转 */
 $("#uploadBtn").addEventListener("click", () => {
   if (!requireLogin()) return;
-  Object.assign(up, { step: 1, cover: 0, tags: [], priceMode: "free", customCover: null, shots: [], link: { url: "", pan: "", code: "", exp: "长期有效" }, linkMode: "pan", siteUrl: "" });
+  Object.assign(up, { step: 1, cover: 0, tags: [], priceMode: "free", customCover: null, shots: [], link: { url: "", pan: "", code: "", exp: "长期有效" } });
   $("#upTitle").value = ""; $("#upDesc").value = ""; $("#upPrice").value = "";
   $("#panUrl").value = ""; $("#panCode").value = ""; $("#panDetect").hidden = true; $("#panErr").hidden = true;
-  $("#siteUrl").value = ""; $("#siteErr").hidden = true;
   $$("#panExpiry .chip").forEach((x, i) => x.classList.toggle("on", i === 0));
-  applyLinkMode();
   $("#cropWrap").hidden = true;
   buildCoverPicker(); renderTagSelected(); renderShotPicker(); updateWizard();
   openModal("#uploadModal");
 });
 $("#stepBack").addEventListener("click", () => { if (up.step > 1) { up.step--; updateWizard(); } });
-$("#stepNext").addEventListener("click", async () => {
+$("#stepNext").addEventListener("click", () => {
   if (up.step < 3) { up.step++; updateWizard(); return; }
   const custom = up.cover === 8 && up.customCover;
   const gi = custom ? 0 : COVERS[up.cover][1];
   const title = $("#upTitle").value.trim();
   /* 进入创作者中心的「审核中」列表 */
-  const entry = { mid: "m" + Date.now(), title, emoji: custom ? "🖼️" : COVERS[up.cover][0], g: gi, coverURL: custom ? up.customCover : null, status: "pending", price: up.priceMode === "free" ? 0 : +$("#upPrice").value, views: 0, downloads: 0, revenue: 0, date: new Date().toISOString().slice(0, 10), shots: [...up.shots], link: up.linkMode === "pan" ? { ...up.link } : null, linkKind: up.linkMode, siteUrl: up.linkMode === "url" ? up.siteUrl : "" };
+  const entry = { mid: "m" + Date.now(), title, emoji: custom ? "🖼️" : COVERS[up.cover][0], g: gi, coverURL: custom ? up.customCover : null, status: "pending", price: up.priceMode === "free" ? 0 : +$("#upPrice").value, views: 0, downloads: 0, revenue: 0, date: new Date().toISOString().slice(0, 10), shots: [...up.shots], link: { ...up.link } };
   MY.items.unshift(entry);
   closeAllModals();
   toast("📤 已提交审核，预计 2 小时内完成（演示约 5 秒）");
-  /* 数据库入库：图片先上传存储桶，再写作品表 */
-  let dbid = null;
-  if (DB.isOnline()) {
-    try {
-      const uid = await DB.uid();
-      const pub = { ...entry, desc: $("#upDesc").value.trim(), type: up.tags.includes("skill") ? "skill" : (up.tags[0] || "其他"), tags: [...up.tags], ver: "v1.0", author: ME };
-      if (pub.coverURL && pub.coverURL.startsWith("data:image/")) pub.coverURL = await pushImage(`covers/${uid}/${Date.now()}.jpg`, pub.coverURL);
-      for (let i = 0; i < pub.shots.length; i++) if (pub.shots[i].startsWith("data:image/")) pub.shots[i] = await pushImage(`shots/${uid}/${Date.now()}_${i}.jpg`, pub.shots[i]);
-      entry.coverURL = pub.coverURL; entry.shots = pub.shots;
-      const created = await DB.insertWork(pub, uid);
-      dbid = created.dbid; entry.dbid = dbid; entry.id = dbid;
-    } catch (e) { toast("⚠️ 数据库同步失败：" + (e.message || e)); }
-  }
-  /* 演示：5 秒后自动过审上线（真实数据库中状态同步更新） */
-  setTimeout(async () => {
+  /* 演示：5 秒后自动过审上线 */
+  setTimeout(() => {
     entry.status = "online";
-    if (dbid && DB.isOnline()) { try { await DB.setWorkStatus(dbid, "online"); } catch (_) {} }
     ITEMS.unshift({
-      id: dbid || Date.now(), dbid, title,
-      emoji: entry.emoji, g: gi, coverURL: entry.coverURL, shots: entry.shots, link: entry.link, linkKind: entry.linkKind, siteUrl: entry.siteUrl,
-      type: up.tags.includes("skill") ? "skill" : (up.tags[0] || "其他"), tags: [...up.tags],
+      id: Date.now(), title,
+      emoji: entry.emoji, g: gi, coverURL: entry.coverURL, shots: entry.shots, link: entry.link,
+      type: up.tags.includes("skill") ? "skill" : up.tags[0], tags: [...up.tags],
       price: entry.price, author: ME, downloads: 0, likes: 0, ver: "v1.0",
-      fmt: entry.linkKind === "url" ? "网址作品" : (up.link.pan + " 链接"), size: entry.linkKind === "url" ? "" : up.link.exp,
+      fmt: up.link.pan + " 链接", size: up.link.exp,
       updated: entry.date, desc: $("#upDesc").value.trim(),
-      comments: [], reviews: [], rating: 5, ratingCnt: 0,
     });
-    const n = { ico: "✅", bg: "--free-bg", text: `你的作品《${title}》审核通过，已上线`, time: "刚刚", go: "#/studio?tab=works" };
-    addNotif(n);
-    if (DB.isOnline() && MYUID) DB.pushNotif(MYUID, n);
+    addNotif({ ico: "✅", bg: "--free-bg", text: `你的作品《${title}》审核通过，已上线`, time: "刚刚", go: "#/studio?tab=works" });
     if (!$("#view-explore").hidden) renderGrid();
     if (!$("#view-studio").hidden && studioTab === "works") renderStudio("works");
     toast("✅《" + title + "》审核通过，已上线");
@@ -1094,10 +984,6 @@ function sendChat() {
   conv.msgs.push({ me: true, t: v, time: "刚刚" });
   renderMessages(conv.who);
   const b = $("#chatBody"); if (b) b.scrollTop = b.scrollHeight;
-  if (DB.isOnline() && MYUID) {
-    const other = DB.uidOf(messagesCur);
-    if (other) { const key = [MYUID, other].sort().join("|"); DB.sendMessage(key, MYUID, other, v).catch((e) => toast("消息同步失败：" + (e.message || e))); }
-  }
 }
 $view("messages").addEventListener("click", (e) => {
   const cv = e.target.closest("[data-conv]");
@@ -1461,35 +1347,23 @@ $$("#loginModal [data-ltab]").forEach((t) => t.addEventListener("click", () => {
 $("#pwEye").addEventListener("click", () => { const p = $("#liPass"); p.type = p.type === "password" ? "text" : "password"; });
 function validAccount(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || /^1[3-9]\d{9}$/.test(v.replace(/\s/g, "")); }
 function fieldErr(input, msg) { const f = input.closest(".lfield"); f.classList.toggle("bad", !!msg); input.classList.toggle("err", !!msg); f.querySelector("em").textContent = msg || ""; }
- $("#loginForm").addEventListener("submit", async (e) => {
-   e.preventDefault();
-   const name = $("#liName").value.trim(), acc = $("#liAccount").value.trim(), pass = $("#liPass").value;
-   let ok = true;
-   if (loginMode === "reg" && name.length < 2) { fieldErr($("#liName"), "昵称至少 2 个字符"); ok = false; } else fieldErr($("#liName"), "");
-   if (!validAccount(acc)) { fieldErr($("#liAccount"), "请输入正确的邮箱或 11 位手机号"); ok = false; } else fieldErr($("#liAccount"), "");
-   if (pass.length < 6) { fieldErr($("#liPass"), "密码至少 6 位"); ok = false; } else fieldErr($("#liPass"), "");
-   if (loginMode === "reg" && !$("#liAgree").checked) { toast("请先勾选同意《用户协议》"); ok = false; }
-   if (!ok) return;
-   if (!DB.isOnline()) { toast("数据库未连接，暂时无法登录（见页面顶部提示）"); return; }
-   if (/^1[3-9]\d{9}$/.test(acc.replace(/\s/g, ""))) { fieldErr($("#liAccount"), "手机号登录需接入短信服务，当前请使用邮箱"); return; }
-   const btn = $("#loginSubmit");
-   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> ' + (loginMode === "reg" ? "注册中…" : "登录中…");
-   try {
-     if (loginMode === "reg") await DB.signUp(acc, pass, name); else await DB.signIn(acc, pass);
-     btn.disabled = false; btn.textContent = loginMode === "reg" ? "注 册" : "登 录";
-     closeAllModals();
-     toast(loginMode === "reg" ? "🎉 注册成功，欢迎加入造物集" : "✅ 登录成功");
-   } catch (err2) {
-     btn.disabled = false; btn.textContent = loginMode === "reg" ? "注 册" : "登 录";
-     const msg = String(err2.message || err2);
-     if (/already registered|already exists|has been taken/i.test(msg)) fieldErr($("#liAccount"), "该邮箱已被注册");
-     else if (/Invalid login credentials/i.test(msg)) fieldErr($("#liPass"), "邮箱或密码错误");
-     else if (/at least 6/i.test(msg)) fieldErr($("#liPass"), "密码至少 6 位");
-     else if (/valid email|invalid format/i.test(msg)) fieldErr($("#liAccount"), "邮箱格式不正确");
-     else if (/rate limit|too many/i.test(msg)) fieldErr($("#liAccount"), "操作过于频繁，请稍后再试");
-     else toast("登录失败：" + msg);
-   }
- });
+$("#loginForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const name = $("#liName").value.trim(), acc = $("#liAccount").value.trim(), pass = $("#liPass").value;
+  let ok = true;
+  if (loginMode === "reg" && name.length < 2) { fieldErr($("#liName"), "昵称至少 2 个字符"); ok = false; } else fieldErr($("#liName"), "");
+  if (!validAccount(acc)) { fieldErr($("#liAccount"), "请输入正确的邮箱或 11 位手机号"); ok = false; } else fieldErr($("#liAccount"), "");
+  if (pass.length < 6) { fieldErr($("#liPass"), "密码至少 6 位"); ok = false; } else fieldErr($("#liPass"), "");
+  if (loginMode === "reg" && !$("#liAgree").checked) { toast("请先勾选同意《用户协议》"); ok = false; }
+  if (!ok) return;
+  const btn = $("#loginSubmit");
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> ' + (loginMode === "reg" ? "注册中…" : "登录中…");
+  setTimeout(() => {
+    btn.disabled = false; btn.textContent = loginMode === "reg" ? "注 册" : "登 录";
+    const nick = loginMode === "reg" ? name : (acc.includes("@") ? acc.split("@")[0] : "用户" + acc.slice(-4));
+    signIn(nick, "账号" + (loginMode === "reg" ? "注册" : "登录") + "成功");
+  }, 800);
+});
 function signIn(nick, msg) {
   if (!USERS[nick]) USERS[nick] = { g: Math.floor(Math.random() * GRADS.length), bio: "刚刚加入造物集的新朋友。", verified: false, followers: 0, following: 0, joined: "2026-09" };
   ME = nick;
@@ -1516,16 +1390,10 @@ function startQR(kind) {
   drawQR($("#qrCanvas"));
   $("#qrTip").textContent = "请使用" + kind + "扫一扫登录";
   $("#qrTip").classList.remove("ok");
-  /* 微信/QQ 原生登录需要企业资质认证；此处展示真实二维码样式并引导使用邮箱注册 */
   qrTimer = setTimeout(() => {
-    $("#qrTip").textContent = "⚠️ " + (kind === "wx" ? "微信" : "QQ") + " 登录需要企业资质认证，暂未开放";
-    $("#qrTip").classList.remove("ok");
-    $("#qrTip").style.color = "var(--warn)";
-    qrTimer = setTimeout(() => {
-      resetLoginPanel();
-      loginMode = "reg"; renderLoginMode();
-      toast("请使用邮箱注册登录（微信/QQ 登录即将开放）");
-    }, 1600);
+    $("#qrTip").textContent = "✓ 授权成功，正在进入…";
+    $("#qrTip").classList.add("ok");
+    qrTimer = setTimeout(() => signIn(kind === "wx" ? "微信用户_小造" : "QQ用户_小物", (kind === "wx" ? "微信" : "QQ") + "授权登录成功"), 900);
   }, 2000);
 }
 $("#oauthWx").addEventListener("click", () => startQR("wx"));
@@ -1559,7 +1427,7 @@ $("#notifList").addEventListener("click", (e) => {
   n.unread = false; renderNotifs(); notifPop.hidden = true;
   if (n.go) location.hash = n.go;
 });
-$("#readAll").addEventListener("click", () => { NOTIFS.forEach((n) => (n.unread = false)); renderNotifs(); if (DB.isOnline() && MYUID) DB.markAllNotifsRead(MYUID); toast("已全部标记为已读"); });
+$("#readAll").addEventListener("click", () => { NOTIFS.forEach((n) => (n.unread = false)); renderNotifs(); toast("已全部标记为已读"); });
 avatarBtn.addEventListener("click", (e) => {
   e.stopPropagation();
   if (!ME) { openLogin("login"); return; }
@@ -1569,7 +1437,7 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest(".notif")) notifPop.hidden = true;
   if (!e.target.closest(".user-menu")) userPop.hidden = true;
 });
-$("#logoutBtn").addEventListener("click", async () => { userPop.hidden = true; if (DB.isOnline()) await DB.signOut(); ME = null; MYUID = null; NOTIFS = []; renderNotifs(); renderUserChip(); route(); toast("已退出登录，期待下次再见"); });
+$("#logoutBtn").addEventListener("click", () => { userPop.hidden = true; ME = null; renderUserChip(); toast("已退出登录，期待下次再见"); });
 $("#userPop").addEventListener("click", (e) => { if (!ME && e.target.closest("a")) { e.preventDefault(); openLogin("login"); toast("请先登录"); } });
 const themeBtn = $("#themeBtn");
 themeBtn.addEventListener("click", () => {
@@ -1596,14 +1464,7 @@ $view("community").addEventListener("click", (e) => {
   const topic = e.target.closest("[data-topic]");
   if (topic) { feedState.topic = topic.dataset.topic; renderCommunity(); return; }
   const lp = e.target.closest("[data-like-post]");
-  if (lp) {
-    const p = FEED.find((x) => x.id === +lp.dataset.likePost);
-    p.liked = !p.liked;
-    lp.classList.toggle("liked", p.liked);
-    lp.querySelector("span").textContent = p.likes + (p.liked ? 1 : 0);
-    if (DB.isOnline() && p.dbid && ME) DB.togglePostLike(p.dbid).then((r) => { p.liked = r.liked; p.likes = r.count; lp.classList.toggle("liked", p.liked); lp.querySelector("span").textContent = r.count; }).catch(() => {});
-    return;
-  }
+  if (lp) { const p = FEED.find((x) => x.id === +lp.dataset.likePost); p.liked = !p.liked; lp.classList.toggle("liked", p.liked); lp.querySelector("span").textContent = p.likes + (p.liked ? 1 : 0); return; }
   const cp = e.target.closest("[data-cmt-post]");
   if (cp) { const id = +cp.dataset.cmtPost; feedState.open.has(id) ? feedState.open.delete(id) : feedState.open.add(id); $("#cmts-" + id).classList.toggle("open"); return; }
   const cs = e.target.closest("[data-cmt-send]");
@@ -1625,22 +1486,15 @@ function sendFeedCmt(id) {
   const v = input.value.trim(); if (!v) return;
   p.comments.unshift({ a: ME, t: v, time: "刚刚" });
   feedState.open.add(id);
-  if (DB.isOnline() && p.dbid) { const u = DB.uidOf(ME); DB.insertPostComment(p.dbid, v, u).catch((e) => toast("评论同步失败：" + (e.message || e))); }
   renderCommunity();
   toast("💬 评论已发布");
 }
 function sendFeedPost() {
   const v = $("#compText").value.trim(); if (!v) return;
-  if (requireLogin()) return;
-  const uid = DB.uidOf(ME);
-  const finish = (dbid) => {
-    FEED.unshift({ id: dbid || Date.now(), dbid, a: ME, g: nickHash(ME), time: "刚刚", topic: "动态", text: v, tags: [], likes: 0, comments: [] });
-    feedState.topic = "全部";
-    renderCommunity();
-    toast("🎉 动态已发布到社区");
-  };
-  if (DB.isOnline() && uid) DB.insertFeedPost({ topic: "动态", text: v, tags: [] }, uid).then((dbid) => finish(dbid)).catch((e) => toast("发布失败：" + (e.message || e)));
-  else finish(null);
+  FEED.unshift({ id: Date.now(), a: ME, g: 7, time: "刚刚", topic: "动态", text: v, tags: [], likes: 0, comments: [] });
+  feedState.topic = "全部";
+  renderCommunity();
+  toast("🎉 动态已发布到社区");
 }
 $view("profile").addEventListener("click", (e) => {
   const lvChip = e.target.closest("[data-level]");
@@ -1662,15 +1516,7 @@ $view("profile").addEventListener("click", (e) => {
   if (tagChip && tagChip.dataset.tag) { e.stopPropagation(); state.tag = tagChip.dataset.tag; buildFilterBar(); renderGrid(); location.hash = "#/"; return; }
   const tab = e.target.closest("[data-ptab]");
   if (tab) { renderProfile(profState.name, tab.dataset.ptab); return; }
-  if (e.target.closest("#pFollow")) {
-    const n = profState.name;
-    if (n === ME) return;
-    FOLLOWING.has(n) ? FOLLOWING.delete(n) : FOLLOWING.add(n);
-    if (DB.isOnline() && MYUID) DB.setFollow(MYUID, n, FOLLOWING.has(n));
-    renderProfile(n, profState.tab);
-    toast(FOLLOWING.has(n) ? "已关注 " + n : "已取消关注");
-    return;
-  }
+  if (e.target.closest("#pFollow")) { const n = profState.name; FOLLOWING.has(n) ? FOLLOWING.delete(n) : FOLLOWING.add(n); renderProfile(n, profState.tab); toast(FOLLOWING.has(n) ? "已关注 " + n : "已取消关注"); return; }
   if (e.target.closest("#pMsg")) { toast("私信功能即将开放（演示）"); return; }
   const card = e.target.closest(".card");
   if (card) openDetail(ITEMS.find((x) => x.id === +card.dataset.id));
@@ -1690,11 +1536,7 @@ $view("studio").addEventListener("click", (e) => {
     const it = list[idx];
     if (op.dataset.op === "data") openItemData(it.mid);
     if (op.dataset.op === "edit") openItemEdit(it.mid);
-    if (op.dataset.op === "off" || op.dataset.op === "on") {
-      it.status = op.dataset.op === "off" ? "off" : "online";
-      if (DB.isOnline() && it.dbid) DB.setWorkStatus(it.dbid, it.status);
-      renderStudio("works"); toast(op.dataset.op === "off" ? "已下架，买家不再可见" : "已重新上架");
-    }
+    if (op.dataset.op === "off" || op.dataset.op === "on") { it.status = op.dataset.op === "off" ? "off" : "online"; renderStudio("works"); toast(op.dataset.op === "off" ? "已下架，买家不再可见" : "已重新上架"); }
     return;
   }
   if (e.target.closest("#withDraw")) {
@@ -1712,7 +1554,6 @@ $view("studio").addEventListener("click", (e) => {
   }
   if (e.target.closest("#setSave")) {
     USERS[ME].bio = $("#setBio").value.trim();
-    if (DB.isOnline() && MYUID) DB.updateProfile(MYUID, { bio: USERS[ME].bio }).catch((e2) => toast("云同步失败：" + (e2.message || e2)));
     const btn = e.target.closest("#setSave");
     btn.classList.add("success"); btn.textContent = "✓ 已保存";
     setTimeout(() => { btn.classList.remove("success"); btn.textContent = "保存设置"; }, 1600);
@@ -1720,13 +1561,9 @@ $view("studio").addEventListener("click", (e) => {
     return;
   }
   const zo = e.target.closest("[data-zo]");
-  if (zo) {
-    USERS[ME].avatar = { type: "zodiac", v: zo.dataset.zo };
-    if (DB.isOnline() && MYUID) DB.updateProfile(MYUID, { avatar: USERS[ME].avatar }).catch(() => {});
-    renderStudio("settings"); renderUserChip(); toast("已换上「" + zo.dataset.zo + "」生肖头像 🎉"); return;
-  }
+  if (zo) { USERS[ME].avatar = { type: "zodiac", v: zo.dataset.zo }; renderStudio("settings"); renderUserChip(); toast("已换上「" + zo.dataset.zo + "」生肖头像 🎉"); return; }
   const bs = e.target.closest("[data-bgsel]");
-  if (bs) { USERS[ME].bg = bs.dataset.bgsel; USERS[ME].bgImg = null; if (DB.isOnline() && MYUID) DB.updateProfile(MYUID, { bg: bs.dataset.bgsel, bg_img: null }).catch(() => {}); renderStudio("settings"); toast("背景已切换，去个人主页体验互动效果 →"); return; }
+  if (bs) { USERS[ME].bg = bs.dataset.bgsel; USERS[ME].bgImg = null; renderStudio("settings"); toast("背景已切换，去个人主页体验互动效果 →"); return; }
   if (e.target.closest("#avUpload")) { avFile.click(); return; }
   if (e.target.closest("#bgUpload")) { bgFile.click(); return; }
   const pm = e.target.closest(".pay-m");
@@ -1756,155 +1593,58 @@ document.addEventListener("dblclick", (e) => {
 /* ---------- 深链（分享定位 / 演示）：?view=detail&id=11 或 ?view=upload&step=3 ---------- */
 const params = new URLSearchParams(location.search);
 if (params.has("flat")) document.documentElement.classList.add("flat"); // 低特效：无毛玻璃/动画（截图与低性能设备用）
+if (params.get("view") === "detail") {
+  const it = ITEMS.find((x) => x.id === +(params.get("id") || 11));
+  if (it) { if (params.get("shots") === "1") it.shots = makeSampleShots(); openDetail(it); }
+} else if (params.get("view") === "upload") {
+  $("#uploadBtn").click();
+  const st = Math.min(3, Math.max(1, +(params.get("step") || 1)));
+  if (st >= 2) {
+    $("#upTitle").value = "文档翻译机 Translator Skill";
+    $("#upDesc").value = "把任意文档丢进去，输出保持排版的地道译文。\n支持 32 种语言互译，自动识别术语表，长文档分段处理不丢上下文。";
+    up.tags = ["skill", "翻译", "效率"];
+    renderTagSelected();
+  }
+  up.step = st; updateWizard();
+  if (params.get("crop") === "1") { // 演示：画布生成样例图并打开裁剪器
+    const cv = document.createElement("canvas"); cv.width = 960; cv.height = 640;
+    const c = cv.getContext("2d");
+    const g = c.createLinearGradient(0, 0, 960, 640);
+    g.addColorStop(0, "#34D399"); g.addColorStop(.55, "#0EA5E9"); g.addColorStop(1, "#6366F1");
+    c.fillStyle = g; c.fillRect(0, 0, 960, 640);
+    c.fillStyle = "rgba(255,255,255,.92)"; c.font = "bold 84px sans-serif"; c.textAlign = "center";
+    c.fillText("示例封面图 · 960×640", 480, 340);
+    openCrop(cv.toDataURL());
+  }
+  if (params.get("shots") === "1") { up.shots.push(...makeSampleShots()); renderShotPicker(); }
+  if (params.get("tagOpen") === "1") openTagSuggest();
+  if (params.get("paid") === "1") { // 演示：直接切到付费态，展示交易保障说明
+    up.priceMode = "paid";
+    $$(".price-opt").forEach((x) => x.classList.toggle("on", x.dataset.price === "paid"));
+    $("#priceField").hidden = false;
+    $("#escrowNote").hidden = false;
+    validateStep();
+  }
+}
+
+if (params.get("notif") === "1") notifPop.hidden = false; // 演示：直接展开通知中心
+if (params.get("itemdata")) setTimeout(() => openItemData(params.get("itemdata")), 60); // 演示：数据看板
+if (params.get("itemedit")) setTimeout(() => openItemEdit(params.get("itemedit")), 60); // 演示：编辑作品
+if (params.get("level") === "1") setTimeout(() => openLevel(ME), 60); // 演示：等级权益
+if (params.get("cal") === "1") setTimeout(() => openJoinCal(ME), 60); // 演示：加入日历卡
+if (params.get("rename") === "1") setTimeout(() => openRename(), 60); // 演示：改名
+if (params.get("login") === "1") openLogin(); // 演示：直接打开登录弹窗
+if (params.get("rp")) rankState.period = params.get("rp"); // 演示：榜单周期
+if (params.get("rtag")) rankState.tag = params.get("rtag"); // 演示：榜单标签
+if (params.get("bgs")) USERS[ME].bg = params.get("bgs"); // 演示：主页背景方案
+if (params.get("theme") === "dark") document.documentElement.dataset.theme = "dark";
 else { try { const savedTheme = localStorage.getItem("mh-theme"); if (savedTheme) document.documentElement.dataset.theme = savedTheme; } catch (_) {} }
 
-/* ---------- 启动：连接数据库 → 加载数据 → 渲染 → 深链 ---------- */
-let bootDone = false;
-const bootQueue = [];
-function afterBoot(fn) { bootDone ? fn() : bootQueue.push(fn); }
-
-async function loadSocial(myUid) {
-  const social = await DB.fetchSocial();
-  social.forEach((f) => {
-    const a = DB.nickOf(f.follower), b = DB.nickOf(f.followee);
-    if (!a || !b) return;
-    if (USERS[b]) USERS[b].followers = (USERS[b].followers || 0) + 1;
-    if (USERS[a]) USERS[a].following = (USERS[a].following || 0) + 1;
-    if (myUid && f.follower === myUid) FOLLOWING.add(b);
-  });
-}
-async function loadPublic() {
-  const works = await DB.fetchWorks();
-  ITEMS.length = 0; ITEMS.push(...works);
-  const profiles = await DB.fetchProfiles();
-  profiles.forEach((p) => {
-    const nick = p.nickname; DB.remember(p.id, nick);
-    if (!USERS[nick]) USERS[nick] = { g: nickHash(nick) };
-    Object.assign(USERS[nick], { bio: p.bio, verified: p.verified, level: p.level || 1, joined: p.joined || "", avatar: p.avatar || {}, bg: p.bg, bgImg: p.bg_img, quote: p.quote, payQr: p.pay_qr });
-  });
-  const [comments, reviews, feed] = await Promise.all([DB.fetchAllWorkComments(), DB.fetchAllReviews(), DB.fetchFeed(MYUID, relTime)]);
-  ITEMS.forEach((it) => { it.comments = []; it.reviews = []; });
-  comments.forEach((c) => { const it = ITEMS.find((x) => x.dbid === c.work_id); if (it) it.comments.push({ a: c.profiles?.nickname || "?", t: c.body, time: (c.created_at || "").slice(0, 10) }); });
-  reviews.forEach((r) => { const it = ITEMS.find((x) => x.dbid === r.work_id); if (it) it.reviews.push({ a: r.profiles?.nickname || "?", s: r.rating, t: r.body, time: (r.created_at || "").slice(0, 10) }); });
-  ITEMS.forEach((it) => {
-    it.ratingCnt = it.reviews.length;
-    it.rating = it.ratingCnt ? (it.reviews.reduce((s, r) => s + r.s, 0) / it.ratingCnt).toFixed(1) : 5;
-  });
-  FEED.length = 0; FEED.push(...feed);
-  TOPICS.forEach((t) => { t.hot = FEED.filter((p) => p.topic === t.n).length * 8 + 6; });
-}
-async function loadMyData() {
-  if (!MYUID) return;
-  const myWorks = await DB.fetchMyWorks(MYUID);
-  MY.items = myWorks.map((w) => ({ mid: "m" + w.dbid, dbid: w.dbid, title: w.title, emoji: w.emoji, g: w.g, coverURL: w.coverURL, status: w.status, price: w.price, views: w.views, downloads: w.downloads, date: w.updated, link: w.link, linkKind: w.linkKind, siteUrl: w.siteUrl }));
-  MY.txs = await DB.fetchSellerOrders(MYUID);
-  const buy = await DB.fetchBuyerOrders(MYUID);
-  OWNED.clear(); MY.purchased = [];
-  buy.forEach((b) => { if (b.raw === "paid" || b.raw === "confirmed") { OWNED.add(b.work_id); MY.purchased.push({ id: b.work_id, time: b.date.slice(0, 10), price: b.amt }); } });
-  const e = await DB.myEarnings();
-  MY.total = +e.total || 0; MY.month = +e.month || 0; MY.balance = +e.total || 0;
-  const now = Date.now(), day = 86400000;
-  MY.chart = Array.from({ length: 7 }, (_, i) => {
-    const d0 = new Date(now - (6 - i) * day), key = d0.toISOString().slice(0, 10);
-    return MY.txs.filter((t) => (t.date || "").startsWith(key.slice(5))).reduce((s, t) => s + t.amt, 0);
-  });
-  MY.today = MY.chart[6];
-  /* 私信会话 */
-  const msgs = await DB.fetchMyMessages(MYUID);
-  const groups = {};
-  msgs.forEach((m) => { const other = m.me ? DB.nickOf(m.receiverUid) : m.a; if (!other) return; (groups[other] = groups[other] || { who: other, unread: 0, msgs: [] }).msgs.push({ me: m.me, t: m.t, time: m.time }); });
-  CONVS = Object.values(groups);
-}
-async function loadNotifs() {
-  if (!MYUID) return;
-  NOTIFS = await DB.fetchNotifs(MYUID);
-  renderNotifs();
-}
-async function boot() {
-  buildFilterBar(); buildCoverPicker(); renderTagSelected(); updateWizard(); renderUserChip(); renderNotifs();
-  const ok = DB.init();
-  if (!ok) { $("#dbBanner").hidden = false; renderGrid(); route(); bootDone = true; afterBootAll(); return; }
-  DB.onAuth(async (nick) => {
-    const prev = ME; ME = nick || null;
-    if (ME) {
-      MYUID = await DB.uid() || MYUID;
-      if (!USERS[ME]) USERS[ME] = { g: nickHash(ME) };
-      USERS[ME].bg = USERS[ME].bg || "aurora";
-      await loadSocial(MYUID).catch(() => {});
-      await loadMyData().catch(() => {});
-      await loadNotifs().catch(() => {});
-    } else {
-      MYUID = null; NOTIFS = []; MY.items = []; MY.txs = []; MY.purchased = [];
-      OWNED.clear(); FOLLOWING.clear(); renderNotifs();
-    }
-    if (prev !== ME) { renderUserChip(); route(); }
-  });
-  try {
-    const sess = await DB.getSession();
-    if (sess) { ME = await DB.ensureNickname(sess) || null; MYUID = sess.id; }
-    if (ME) {
-      if (!USERS[ME]) USERS[ME] = { g: nickHash(ME) };
-      USERS[ME].bg = USERS[ME].bg || "aurora";
-      await loadSocial(MYUID); await loadMyData(); await loadNotifs();
-    }
-    await loadPublic();
-  } catch (e) { console.warn("数据加载失败：", e); $("#dbBanner").hidden = false; }
-  renderGrid(); route(); bootDone = true;
-  afterBootAll();
-}
-function afterBootAll() { while (bootQueue.length) { try { bootQueue.shift()(); } catch (e) { console.warn(e); } } }
-
-buildFilterBar(); renderUserChip(); renderNotifs();
-boot();
-
-/* 深链（数据就绪后执行） */
-afterBoot(() => {
-  const view = params.get("view");
-  if (view === "detail") {
-    const id = +(params.get("id") || 0);
-    const it = ITEMS.find((x) => x.dbid === id || x.id === id) || ITEMS[0];
-    if (it) { if (params.get("shots") === "1") it.shots = makeSampleShots(); openDetail(it); }
-  }
-  if (view === "upload") {
-    if (!requireLogin()) return;
-    $("#uploadBtn").click();
-    const st = Math.min(3, Math.max(1, +(params.get("step") || 1)));
-    if (st >= 2) {
-      $("#upTitle").value = "我的新作品";
-      $("#upDesc").value = "作品功能介绍。";
-      renderTagSelected();
-    }
-    up.step = st; updateWizard();
-    if (params.get("crop") === "1") {
-      const cv = document.createElement("canvas"); cv.width = 960; cv.height = 640;
-      const c = cv.getContext("2d");
-      const g = c.createLinearGradient(0, 0, 960, 640);
-      g.addColorStop(0, "#34D399"); g.addColorStop(.55, "#0EA5E9"); g.addColorStop(1, "#6366F1");
-      c.fillStyle = g; c.fillRect(0, 0, 960, 640);
-      c.fillStyle = "rgba(255,255,255,.92)"; c.font = "bold 84px sans-serif"; c.textAlign = "center";
-      c.fillText("示例封面图 · 960×640", 480, 340);
-      openCrop(cv.toDataURL());
-    }
-    if (params.get("shots") === "1") { up.shots.push(...makeSampleShots()); renderShotPicker(); }
-    if (params.get("tagOpen") === "1") openTagSuggest();
-    if (params.get("paid") === "1") {
-      up.priceMode = "paid";
-      $$(".price-opt").forEach((x) => x.classList.toggle("on", x.dataset.price === "paid"));
-      $("#priceField").hidden = false; $("#escrowNote").hidden = false; validateStep();
-    }
-  }
-  if (params.get("notif") === "1") notifPop.hidden = false;
-  if (params.get("itemdata")) openItemData(params.get("itemdata"));
-  if (params.get("itemedit")) openItemEdit(params.get("itemedit"));
-  if (params.get("level") === "1") openLevel(ME);
-  if (params.get("cal") === "1") openJoinCal(ME);
-  if (params.get("rename") === "1") openRename();
-  if (params.get("login") === "1") openLogin();
-  if (params.get("rp")) rankState.period = params.get("rp");
-  if (params.get("rtag")) rankState.tag = params.get("rtag");
-  if (params.get("rp") || params.get("rtag")) { buildFilterBar(); renderRank(); }
-  if (params.get("bgs")) { if (ME && USERS[ME]) { USERS[ME].bg = params.get("bgs"); if (!$("#view-profile").hidden) renderProfile(ME, "works"); } }
-});
+/* ---------- 启动 ---------- */
+buildFilterBar(); renderGrid(); buildCoverPicker(); renderTagSelected(); updateWizard();
+if (USERS[ME]) USERS[ME].bg = USERS[ME].bg || "aurora";
+renderUserChip();
+renderNotifs(); route();
 } catch (err) {
   const d = document.createElement("div");
   d.style.cssText = "position:fixed;top:0;left:0;z-index:9999;background:#fee;color:#900;padding:10px;font:12px monospace;max-width:100%;white-space:pre-wrap";

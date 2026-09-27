@@ -1,0 +1,6 @@
+shots/
+extract/
+*.log
+server.js
+shoot.bat
+shoot_live.bat

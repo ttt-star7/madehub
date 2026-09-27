@@ -172,23 +172,32 @@
 
     <!-- Step 1 -->
     <section class="upload-step" data-step="1">
-      <div class="field">
+      <div class="chips" id="linkKindTabs" style="margin-bottom:16px">
+        <button class="chip on" data-lk="pan" type="button">🗂️ 网盘分发</button>
+        <button class="chip" data-lk="url" type="button">🌐 网址作品</button>
+      </div>
+      <div class="field" id="panFields">
         <span class="field-label">网盘分享链接 <em>*</em> <small>自动识别：百度网盘 / 阿里云盘 / 夸克 / 蓝奏云 / 123 云盘 / 天翼云 / 微云 / OneDrive</small></span>
         <input type="url" id="panUrl" placeholder="粘贴网盘分享链接，自动识别平台…" autocomplete="off">
         <div class="pan-detect" id="panDetect" hidden><span class="pan-brand" id="panBrand"></span><span class="pan-ok">✓ 已识别，买家下载时将自动跳转并复制提取码</span></div>
         <em class="pan-err" id="panErr" hidden>暂不支持该链接，请使用上述网盘的分享链接</em>
       </div>
-      <div class="field">
+      <div class="field" id="panCodeField">
         <span class="field-label">提取码 <small>选填；买家点击下载时自动复制到剪贴板</small></span>
         <input type="text" id="panCode" maxlength="8" placeholder="如：4x7k" autocomplete="off" style="text-transform:uppercase">
       </div>
-      <div class="field">
+      <div class="field" id="panExpField">
         <span class="field-label">分享有效期 <small>建议长期有效，避免买家链接失效</small></span>
         <div class="chips" id="panExpiry">
           <button class="chip on" data-exp="长期有效" type="button">长期有效</button>
           <button class="chip" data-exp="30 天" type="button">30 天</button>
           <button class="chip" data-exp="7 天" type="button">7 天</button>
         </div>
+      </div>
+      <div class="field" id="urlField" hidden>
+        <span class="field-label">作品网址 <em>*</em> <small>免费作品：访客直接点击跳转；付费作品：买家支付解锁后才能访问</small></span>
+        <input type="url" id="siteUrl" placeholder="https://你的作品网址…" autocomplete="off">
+        <em class="pan-err" id="siteErr" hidden>请输入 http(s):// 开头的有效公网网址（不支持内网地址）</em>
       </div>
       <h3 class="upload-label">选择封面样式 <small>或上传图片自定义裁剪</small></h3>
       <div class="cover-picker" id="coverPicker"></div>
@@ -361,6 +370,14 @@
 </div>
 
 <div class="toast" id="toast" role="status"></div>
+<div class="db-banner" id="dbBanner" hidden>
+  <span>🗄️ 数据库未连接：站点以空数据模式运行。</span>
+  <a href="https://supabase.com" target="_blank" rel="noopener">创建 Supabase 项目</a>
+  <span>→ 在 SQL Editor 运行 supabase-schema.sql → 把 URL 和 anon key 填入 config.js</span>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="db.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

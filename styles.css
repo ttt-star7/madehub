@@ -308,6 +308,9 @@ img{display:block;max-width:100%}
 /* ============ Toast ============ */
 .toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,20px);background:var(--solid);color:var(--solid-fg);padding:12px 22px;border-radius:12px;font-size:14px;font-weight:500;box-shadow:var(--shadow-2);opacity:0;visibility:hidden;transition:.25s var(--ease);z-index:200;display:flex;align-items:center;gap:8px}
 .toast.show{opacity:1;visibility:visible;transform:translate(-50%,0)}
+/* 数据库未连接横幅 */
+.db-banner{position:fixed;left:0;right:0;bottom:0;z-index:300;display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;padding:10px 16px;background:var(--warn-bg);color:var(--warn);font-size:13px;border-top:1px solid var(--warn)}
+.db-banner a{color:var(--accent);font-weight:700;text-decoration:underline}
 
 /* ============ 页脚 ============ */
 .site-footer{border-top:1px solid var(--line);background:var(--surface)}
