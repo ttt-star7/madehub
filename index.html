@@ -3,10 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <title>造物集 MadeHub — AI 造物市集</title>
 <meta name="description" content="发现、分享、出售你用 AI 创造的一切：Skill、软件、插件、素材、模型。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235B5BD6'/%3E%3Cpath d='M16 7l8 4.6v9L16 25l-8-4.4v-9L16 7z' fill='none' stroke='white' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M16 7v9m0 0l8-4.4M16 16l-8-4.4' stroke='white' stroke-width='2.4' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=20260927">
 </head>
 <body>
 
@@ -375,9 +376,10 @@
   <a href="https://supabase.com" target="_blank" rel="noopener">创建 Supabase 项目</a>
   <span>→ 在 SQL Editor 运行 supabase-schema.sql → 把 URL 和 anon key 填入 config.js</span>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="config.js"></script>
-<script src="db.js"></script>
-<script src="app.js"></script>
+<script src="vendor/supabase.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="config.js?v=20260927"></script>
+<script src="db.js?v=20260927"></script>
+<script src="app.js?v=20260927"></script>
 </body>
 </html>

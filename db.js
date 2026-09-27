@@ -19,6 +19,14 @@ window.DB = (function () {
     }
     return online;
   }
+  /* 启动时等待外部库就绪（CDN 慢加载容忍），最长 timeoutMs 毫秒 */
+  async function waitForReady(timeoutMs = 6000) {
+    const t0 = Date.now();
+    while (!init() && Date.now() - t0 < timeoutMs) {
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    return online;
+  }
   const isOnline = () => online;
   const meUid = () => { try { return client?.auth.getUser()?.then?.((r) => r.data?.user?.id || null) || null; } catch (_) { return null; } };
   async function uid() { if (!online) return null; const r = await client.auth.getUser(); return r?.data?.user?.id || null; }
@@ -332,7 +340,7 @@ window.DB = (function () {
   }
 
   return {
-    init, isOnline, uid, nickOf, uidOf, remember,
+    init, waitForReady, isOnline, uid, nickOf, uidOf, remember,
     getSession, signUp, signIn, signOut, onAuth, ensureNickname,
     fetchProfiles, updateProfile, fetchProfile,
     fetchWorks, fetchMyWorks, insertWork, updateWork, setWorkStatus, deleteWork, bump,

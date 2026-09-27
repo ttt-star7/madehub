@@ -5,6 +5,31 @@
 window.addEventListener("error", (e) => { const d = document.createElement("div"); d.style.cssText = "position:fixed;top:0;left:0;z-index:9999;background:#fee;color:#900;padding:8px;font:12px monospace;max-width:100%;white-space:pre-wrap"; d.textContent = "ERR: " + e.message + " @line " + e.lineno; document.body.appendChild(d); });
 try {
 
+/* ---------- XSS 三层防御（原型级） ----------
+   1) esc() 源头转义（各模板内）；
+   2) 本守卫：所有 innerHTML 赋值统一经 DOMPurify 消毒（覆盖现存与未来新增的全部注入点）；
+   3) CSP（index.html）禁止内联脚本与事件属性执行，作为最终兜底。 */
+(function hardenInnerHTML() {
+  const proto = Element.prototype;
+  const nativeDesc = Object.getOwnPropertyDescriptor(proto, "innerHTML");
+  let sanitizing = false;
+  Object.defineProperty(proto, "innerHTML", {
+    get() { return nativeDesc.get.call(this); },
+    set(val) {
+      if (sanitizing || typeof val !== "string") { nativeDesc.set.call(this, val); return; }
+      if (window.DOMPurify && typeof DOMPurify.sanitize === "function") {
+        sanitizing = true;
+        try { nativeDesc.set.call(this, DOMPurify.sanitize(val)); }
+        finally { sanitizing = false; }
+      } else {
+        nativeDesc.set.call(this, val); /* 消毒库未加载时回退：仍有 esc + CSP 兜底 */
+      }
+    },
+    configurable: true,
+  });
+})();
+const setHTML = (el, html) => { if (el) el.innerHTML = window.DOMPurify && DOMPurify.sanitize ? DOMPurify.sanitize(html) : html; };
+
 /* ---------- 渐变色板 ---------- */
 const GRADS = [
   ["#6366F1", "#A855F7"], ["#F59E0B", "#EF4444"], ["#10B981", "#0EA5E9"],
@@ -222,7 +247,7 @@ let payItemCur = null;
 function openPay(it) {
   payItemCur = it;
   const [g1, g2] = grad(it.g);
-  $("#payItem").innerHTML = `<span class="cov" style="--g1:${g1};--g2:${g2}">${it.emoji}</span><div style="flex:1;min-width:0"><b>${esc(it.title)}</b><small>${esc(it.author)} · ${it.linkKind === "url" ? "网址作品" : esc(it.link?.pan || "")}</small></div><span class="pp">¥${it.price}</span>`;
+  setHTML($("#payItem"), `<span class="cov" style="--g1:${g1};--g2:${g2}">${it.emoji}</span><div style="flex:1;min-width:0"><b>${esc(it.title)}</b><small>${esc(it.author)} · ${it.linkKind === "url" ? "网址作品" : esc(it.link?.pan || "")}</small></div><span class="pp">¥${it.price}</span>`);
   const btn = $("#payConfirm");
   btn.disabled = false; btn.classList.remove("done");
   btn.textContent = "确认支付 ¥" + it.price;
@@ -310,7 +335,7 @@ function openDetail(it) {
 
   $("#shotMain").parentElement.querySelector(".thumbs").addEventListener("click", (e) => {
     const th = e.target.closest("[data-shot]"); if (!th) return;
-    $("#shotMain").innerHTML = shotHTML(it, +th.dataset.shot, true);
+    setHTML($("#shotMain"), shotHTML(it, +th.dataset.shot, true));
     $$(".thumb").forEach((t) => t.classList.toggle("on", t === th));
   });
   $("#detailBody").querySelector("[data-follow]").addEventListener("click", (e) => {
@@ -341,7 +366,7 @@ function openDetail(it) {
     const v = $("#cmtInput").value.trim(); if (!v) return;
     if (DB.isOnline() && it.dbid) { try { const u = await DB.uid(); await DB.insertWorkComment(it.dbid, v, u); } catch (e2) { toast("评论同步失败：" + (e2.message || e2)); return; } }
     it.comments.unshift({ a: ME, t: v, time: "刚刚" });
-    $("#cmtList").innerHTML = it.comments.map(cmtHTML).join("");
+    setHTML($("#cmtList"), it.comments.map(cmtHTML).join(""));
     $("#cmtCnt").textContent = it.comments.length + " 条";
     $("#cmtInput").value = "";
     toast("💬 评论已发布");
@@ -487,14 +512,14 @@ document.body.appendChild(avFile); document.body.appendChild(bgFile);
 function auditUpload(kind, apply) {
   const chipEl = kind === "av" ? $("#avAudit") : $("#bgAudit");
   if (!chipEl) return;
-  chipEl.innerHTML = '<span class="audit-chip">AI 审核中…</span>';
+  setHTML(chipEl, '<span class="audit-chip">AI 审核中…</span>');
   setTimeout(() => {
     if (!chipEl.isConnected) return;
     if (Math.random() < 0.15) {
-      chipEl.innerHTML = '<span class="audit-chip" style="background:#FEE2E2;color:#DC2626">违规拦截</span>';
+      setHTML(chipEl, '<span class="audit-chip" style="background:#FEE2E2;color:#DC2626">违规拦截</span>');
       toast("❌ 图片未通过违规审核（模拟），请更换图片");
     } else {
-      chipEl.innerHTML = '<span class="audit-chip" style="background:var(--free-bg);color:var(--free)">审核通过</span>';
+      setHTML(chipEl, '<span class="audit-chip" style="background:var(--free-bg);color:var(--free)">审核通过</span>');
       apply();
       toast("✅ 审核通过，已生效");
       addNotif({ ico: "🖼️", bg: "--free-bg", text: `你上传的自定义${kind === "av" ? "头像" : "主页背景"}已通过审核并生效`, time: "刚刚", go: "#/profile/" + encodeURIComponent(ME) });
@@ -541,7 +566,7 @@ $("#cropOk").addEventListener("click", () => {
   toast("✅ 封面已裁剪，可在下方预览");
 });
 function renderTagSelected() {
-  $("#tagSelected").innerHTML = up.tags.map((t) => `<span class="tag-sel">${esc(t)}<button data-rm="${esc(t)}" aria-label="移除标签">×</button></span>`).join("");
+  setHTML($("#tagSelected"), up.tags.map((t) => `<span class="tag-sel">${esc(t)}<button data-rm="${esc(t)}" aria-label="移除标签">×</button></span>`).join(""));
   const full = up.tags.length >= 3;
   const counter = $("#tagCounter");
   counter.textContent = `${up.tags.length} / 3` + (full ? "（已选满，移除后可更换）" : "");
@@ -551,9 +576,9 @@ function renderTagSelected() {
 function suggestTags(q) {
   const full = up.tags.length >= 3;
   const list = PRESET_TAGS.filter((t) => !up.tags.includes(t) && (!q || t.includes(q.toLowerCase()))).slice(0, 12);
-  $("#tagSuggest").innerHTML = list.length
+  setHTML($("#tagSuggest"), list.length
     ? list.map((t) => `<button class="chip${full ? "" : ""}" data-add="${t}" ${full ? "disabled style='opacity:.4'" : ""}>${t}</button>`).join("")
-    : `<span style="font-size:12.5px;color:var(--ink3);padding:4px">没有匹配的预设标签，可直接回车创建「${esc(q)}」</span>`;
+    : `<span style="font-size:12.5px;color:var(--ink3);padding:4px">没有匹配的预设标签，可直接回车创建「${esc(q)}」</span>`);
 }
 function renderPreview() {
   const title = $("#upTitle").value.trim() || "你的作品标题";
@@ -605,7 +630,7 @@ $("#panUrl").addEventListener("input", (e) => {
   up.link.url = v; up.link.pan = pan;
   $("#panDetect").hidden = !pan;
   $("#panErr").hidden = !(v && !pan);
-  if (pan) $("#panBrand").innerHTML = `🌐 <b style="color:var(--ink)">${pan}</b>`;
+  if (pan) setHTML($("#panBrand"), `🌐 <b style="color:var(--ink)">${esc(pan)}</b>`);
   validateStep();
 });
 $("#panCode").addEventListener("input", (e) => { up.link.code = e.target.value.trim().toUpperCase(); });
@@ -1124,13 +1149,13 @@ function openStatList(kind) {
   } else {
     html = its.slice(0, 8).map((x, i) => { const [g1, g2] = grad(x.g); return `<div class="ul-row3" style="--i:${i};--g1:${g1};--g2:${g2}"><span class="cov">${x.emoji}</span><div class="ui"><b>${esc(x.title)}</b><small>累计下载</small></div><span class="num">${fmtDl(x.downloads)}</span></div>`; }).join("") || `<div class="chat-empty" style="padding:30px">还没有下载记录</div>`;
   }
-  $("#listBody").innerHTML = html;
+  setHTML($("#listBody"), html);
   openModal("#listModal");
 }
 
 function openPanel(title, html, wide) {
   $("#listTitle").textContent = title;
-  $("#listBody").innerHTML = html;
+  setHTML($("#listBody"), html);
   $("#listModal .modal-panel").classList.toggle("wide", !!wide);
   openModal("#listModal");
 }
@@ -1191,7 +1216,7 @@ function openItemEdit(mid) {
     curPan = detectPan(v);
     $("#edPanDetect").hidden = !curPan;
     $("#edPanErr").hidden = !(v && !curPan);
-    if (curPan) $("#edPanBrand").innerHTML = `🌐 <b style="color:var(--ink)">${curPan}</b>`;
+    if (curPan) setHTML($("#edPanBrand"), `🌐 <b style="color:var(--ink)">${esc(curPan)}</b>`);
   };
   panInput.addEventListener("input", refreshDetect);
   refreshDetect();
@@ -1437,7 +1462,7 @@ function renderStudio(tab) {
 
 /* ---- 通知中心 ---- */
 function renderNotifs() {
-  $("#notifList").innerHTML = NOTIFS.map((n, i) => `<div class="notif-item${n.unread ? "" : " read"}" style="--i:${i}" data-n="${i}"><span class="n-ico" style="background:var(${n.bg})">${n.ico}</span><div style="flex:1">${n.text}<small>${n.time}</small></div>${n.unread ? '<span class="n-dot"></span>' : ""}</div>`).join("");
+  setHTML($("#notifList"), NOTIFS.map((n, i) => `<div class="notif-item${n.unread ? "" : " read"}" style="--i:${i}" data-n="${i}"><span class="n-ico" style="background:var(${esc(n.bg)})">${esc(n.ico)}</span><div style="flex:1">${esc(n.text)}<small>${esc(n.time)}</small></div>${n.unread ? '<span class="n-dot"></span>' : ""}</div>`).join(""));
   const c = NOTIFS.filter((n) => n.unread).length;
   const b = $("#bellBadge");
   b.hidden = c === 0;
@@ -1545,9 +1570,9 @@ function renderUserChip() {
   if (!ME) { btn.textContent = "未"; btn.style.background = "linear-gradient(135deg,#9CA3AF,#6B7280)"; }
   else if (av.type === "zodiac") { btn.textContent = ZODIAC.find((z) => z[0] === av.v)[1]; btn.style.background = ""; }
   else { btn.textContent = ME[0]; btn.style.background = ""; }
-  $("#userPop .user-pop-head").innerHTML = ME
+  setHTML($("#userPop .user-pop-head"), ME
     ? `<i>${esc(ME[0])}</i><div><b>${esc(ME)}</b><small>${u.verified ? "认证创作者 · Lv.3" : "新用户 · Lv.1"}</small></div>`
-    : `<i>未</i><div><b>未登录</b><small>登录后享受完整功能</small></div>`;
+    : `<i>未</i><div><b>未登录</b><small>登录后享受完整功能</small></div>`);
 }
 
 /* ---- 顶栏交互：通知 / 用户菜单 / 主题 ---- */
@@ -1822,8 +1847,15 @@ async function loadNotifs() {
 }
 async function boot() {
   buildFilterBar(); buildCoverPicker(); renderTagSelected(); updateWizard(); renderUserChip(); renderNotifs();
-  const ok = DB.init();
-  if (!ok) { $("#dbBanner").hidden = false; renderGrid(); route(); bootDone = true; afterBootAll(); return; }
+  renderGrid(); route(); bootDone = true;          /* 先渲染空 UI，不阻塞 */
+  /* 外部库（supabase/DOMPurify 走 CDN）慢加载容忍：8 秒后提示横幅，之后静默重试直到就绪 */
+  let ok = await DB.waitForReady(8000);
+  if (!ok) {
+    $("#dbBanner").hidden = false;
+    afterBootAll();
+    while (!ok) { await new Promise((r) => setTimeout(r, 4000)); ok = DB.init(); }
+    $("#dbBanner").hidden = true;
+  }
   DB.onAuth(async (nick) => {
     const prev = ME; ME = nick || null;
     if (ME) {
@@ -1848,8 +1880,8 @@ async function boot() {
       await loadSocial(MYUID); await loadMyData(); await loadNotifs();
     }
     await loadPublic();
-  } catch (e) { console.warn("数据加载失败：", e); $("#dbBanner").hidden = false; }
-  renderGrid(); route(); bootDone = true;
+  } catch (e) { console.warn("数据加载失败：", e); $("#dbBanner").hidden = false; return; }
+  renderGrid(); route();
   afterBootAll();
 }
 function afterBootAll() { while (bootQueue.length) { try { bootQueue.shift()(); } catch (e) { console.warn(e); } } }
