@@ -48,10 +48,9 @@ const ZODIAC = [
 ];
 const USERS = {};        // nickname -> 资料对象（启动时从数据库填充）
 let ITEMS = [];          // 已上线作品（数据库填充）
-const OWNED = new Set(); // 当前登录用户已购买的作品 dbid
+const FOLLOWING = new Set();
 const MY = { items: [], purchased: [], txs: [], today: 0, month: 0, total: 0, balance: 0, chart: [0, 0, 0, 0, 0, 0, 0] };
 let NOTIFS = [];         // 通知（登录后从数据库加载）
-const FOLLOWING = new Set();
 const FEED = [];         // 社区动态（数据库填充）
 let CONVS = [];          // 私信会话（数据库填充）
 const TOPICS = [
@@ -81,10 +80,8 @@ const toast = (msg) => { const t = $("#toast"); t.textContent = msg; t.classList
 const state = { q: "", tag: "", type: "全部", price: "全部", sort: "new" };
 
 /* ---------- 卡片渲染 ---------- */
-function statusChip(it) {
-  return it.price === 0
-    ? `<span class="mini-chip mini-chip-status-free">免费</span>`
-    : `<span class="mini-chip mini-chip-status-paid">¥${it.price}</span>`;
+function statusChip() {
+  return `<span class="mini-chip mini-chip-status-free">免费</span>`;
 }
 function cardHTML(it, i = 0) {
   const [g1, g2] = grad(it.g);
@@ -95,7 +92,7 @@ function cardHTML(it, i = 0) {
   <article class="card" data-id="${it.id}" style="--i:${i % 12}" tabindex="0" role="button" aria-label="${esc(it.title)}">
     <div class="card-cover" style="--g1:${g1};--g2:${g2}">
       ${coverInner}
-      <span class="badge ${it.price === 0 ? "badge-free" : "badge-paid"}">${it.price === 0 ? "免费" : "¥" + it.price}</span>
+      <span class="badge badge-free">免费</span>
       <div class="cover-actions"><button class="like-btn${it.liked ? " liked" : ""}" aria-label="收藏" data-like><svg viewBox="0 0 24 24"><path d="M12 21s-7.5-4.7-10-9.3C.4 8 2.4 4.5 6 4.5c2.2 0 3.6 1.1 4.5 2.6l1.5 2.4 1.5-2.4c.9-1.5 2.3-2.6 4.5-2.6 3.6 0 5.6 3.5 4 7.2C19.5 16.3 12 21 12 21z"/></svg></button></div>
     </div>
     <div class="card-body">
@@ -224,7 +221,6 @@ function shotHTML(it, i, main = false) {
 }
 function starsHTML(v) { const f = Math.max(0, Math.min(5, Math.round(v))); return "★".repeat(f) + `<span class="off">${"★".repeat(5 - f)}</span>`; }
 function cmtHTML(c) { const [g1, g2] = grad(c.a.length % GRADS.length); return `<div class="cmt" style="--g1:${g1};--g2:${g2}"><i data-goto-user="${esc(c.a)}" style="cursor:pointer">${esc(c.a[0])}</i><div class="c-bubble"><b data-goto-user="${esc(c.a)}" style="cursor:pointer">${esc(c.a)}</b><p>${esc(c.t)}</p><small>${c.time || "刚刚"}</small></div></div>`; }
-function recordBuy(it, price) { if (!MY.purchased.some((b) => b.id === it.id)) MY.purchased.unshift({ id: it.id, time: new Date().toISOString().slice(0, 10), price }); }
 function openPan(it) {
   const link = it.link;
   if (!link || !link.url) { toast("该作品暂无可用链接"); return; }
@@ -243,36 +239,35 @@ function openSite(it) {
   if (DB.isOnline() && it.dbid) DB.bump(it.dbid, "dl");
   toast("🌐 已在新标签页打开作品网址");
 }
-let payItemCur = null;
-function openPay(it) {
-  payItemCur = it;
+/* 举报作品：理由选择 + 提交（满 5 人自动下架，由数据库 RPC 处理） */
+let reportItemCur = null, reportReason = "违法违规";
+function openReport(it) {
+  if (!ME) { openLogin("login"); toast("请先登录后再举报"); return; }
+  reportItemCur = it; reportReason = "违法违规";
   const [g1, g2] = grad(it.g);
-  setHTML($("#payItem"), `<span class="cov" style="--g1:${g1};--g2:${g2}">${it.emoji}</span><div style="flex:1;min-width:0"><b>${esc(it.title)}</b><small>${esc(it.author)} · ${it.linkKind === "url" ? "网址作品" : esc(it.link?.pan || "")}</small></div><span class="pp">¥${it.price}</span>`);
-  const btn = $("#payConfirm");
-  btn.disabled = false; btn.classList.remove("done");
-  btn.textContent = "确认支付 ¥" + it.price;
-  $$("#payMethods .pay-v").forEach((x, i) => x.classList.toggle("on", i === 0));
-  openModal("#payModal");
+  const reasons = ["违法违规", "侵权盗版", "垃圾广告", "内容虚假", "其他"];
+  setHTML($("#reportItem"), `<span class="cov" style="--g1:${g1};--g2:${g2}">${it.emoji}</span><div style="flex:1;min-width:0"><b>${esc(it.title)}</b><small>${esc(it.author)}</small></div>`);
+  setHTML($("#reportReasons"), reasons.map((r, i) => `<button class="chip${i === 0 ? " on" : ""}" data-r="${r}" type="button">${r}</button>`).join(""));
+  $("#reportText").value = "";
+  openModal("#reportModal");
 }
-$("#payConfirm").addEventListener("click", async () => {
-  const it = payItemCur; if (!it || !it.price) return;
-  if (!ME) { openLogin("login"); return; }
-  const btn = $("#payConfirm");
-  btn.disabled = true; btn.textContent = "支付中…";
+$("#reportReasons").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-r]"); if (!b) return;
+  reportReason = b.dataset.r;
+  $$("#reportReasons .chip").forEach((x) => x.classList.toggle("on", x === b));
+});
+$("#reportSubmit").addEventListener("click", async () => {
+  const it = reportItemCur; if (!it) return;
+  const extra = ($("#reportText").value || "").trim();
+  const btn = $("#reportSubmit");
+  btn.disabled = true; btn.textContent = "提交中…";
   try {
-    /* 演示支付：真实订单入库（不发生真实扣款）；接入真实支付网关后此处替换为下单+回调 */
-    if (DB.isOnline()) { const uid = await DB.uid(); await DB.createOrder(it, uid); }
-    OWNED.add(it.id); recordBuy(it, it.price);
-    btn.classList.add("done"); btn.textContent = "✓ 支付成功";
-    toast("✅ 支付成功，作品已解锁");
-    setTimeout(() => {
-      closeAllModals();
-      if (it.linkKind === "url") openSite(it); else openPan(it);
-    }, 650);
-  } catch (e2) {
-    btn.disabled = false; btn.textContent = "确认支付 ¥" + it.price;
-    toast("支付失败：" + (e2.message || e2));
-  }
+    const r = await DB.reportWork(it.dbid || it.id, reportReason + (extra ? "：" + extra : ""));
+    btn.disabled = false; btn.textContent = "提交举报";
+    if (r.status === "already") { toast("你已举报过该作品，平台正在核实"); }
+    else if (r.status === "rejected") { closeAllModals(); renderGrid(); toast("🚫 该作品累计 " + r.count + " 人举报，已自动下架"); }
+    else { closeAllModals(); toast("✅ 举报已提交（累计 " + r.count + " 次），平台将核实处理"); }
+  } catch (e2) { btn.disabled = false; btn.textContent = "提交举报"; toast("提交失败：" + (e2.message || e2)); }
 });
 function openDetail(it) {
   const [g1, g2] = grad(it.g);
@@ -301,21 +296,11 @@ function openDetail(it) {
         <li><span>更新时间</span><b>${it.updated}</b></li>
       </ul>
       <div class="buy-box">
-        ${it.price === 0 ? "" : `<div class="escrow-flow" style="margin-bottom:12px">
-          <span class="ef-step">付款托管</span><i>→</i>
-          <span class="ef-step">下载使用</span><i>→</i>
-          <span class="ef-step on">确认收货</span><i>→</i>
-          <span class="ef-step">打款卖家</span>
-        </div>`}
         <div class="buy-row">
-          <div class="buy-price">${it.price === 0 ? "免费" : "¥" + it.price}<small>${it.price === 0 ? "无需付费，直接获取" : OWNED.has(it.id) ? "已购买 · 永久可用" : "一次购买，永久使用与更新"}</small></div>
-          <button class="btn btn-primary buy-btn" data-buy>${it.price === 0 || OWNED.has(it.id) ? (it.linkKind === "url" ? "打开网站" : "打开网盘") : "付费解锁"}</button>
+          <div class="buy-price">免费<small>${it.linkKind === "url" ? "点击按钮直接访问作品网址" : "打开网盘链接即可获取"}</small></div>
+          <button class="btn btn-primary buy-btn" data-buy>${it.linkKind === "url" ? "打开网站" : "打开网盘"}</button>
         </div>
-        <div class="buy-note">${it.price === 0
-          ? (it.linkKind === "url" ? "点击按钮即可直接访问作品网址" : "点击打开网盘链接，提取码将自动复制到剪贴板")
-          : OWNED.has(it.id)
-            ? (it.linkKind === "url" ? "已购买 · 点击按钮访问作品网址" : "已购买 · 点击打开网盘链接，提取码自动复制")
-            : (it.linkKind === "url" ? "支付解锁后即可访问作品网址 · 平台交易保障 · 手续费仅 5%" : "付款后即可打开网盘链接 · 平台交易保障，确认收货后打款 · 手续费仅 5%")}</div>
+        <div class="buy-note">🆓 本作品永久免费分享 · 内容由创作者提供并负责 · 遇到问题请点「举报」</div>
       </div>
     </aside>
     <section class="detail-extra">
@@ -348,20 +333,14 @@ function openDetail(it) {
     }
   });
   $("#detailBody").querySelector("[data-buy]").addEventListener("click", () => {
-    const unlocked = it.price === 0 || OWNED.has(it.id);
-    if (unlocked) {
-      if (it.linkKind === "url") { openSite(it); if (!OWNED.has(it.id)) recordBuy(it, 0); return; }
-      openPan(it);
-      if (!OWNED.has(it.id)) { recordBuy(it, 0); if (DB.isOnline() && it.dbid) DB.bump(it.dbid, "dl"); }
-      return;
-    }
-    if (!ME) { openPay(it); openLogin("login"); return; }
-    openPay(it);
+    if (it.linkKind === "url") { openSite(it); return; }
+    openPan(it);
+    if (DB.isOnline() && it.dbid) DB.bump(it.dbid, "dl");
   });
   const dmBtn = $("#detailBody").querySelector("[data-dm]");
   if (dmBtn) dmBtn.addEventListener("click", () => openDM(it.author));
   $("#detailBody").querySelector("[data-share]").addEventListener("click", () => { navigator.clipboard?.writeText(location.href.split("?")[0] + "?view=detail&id=" + it.id).catch(() => {}); toast("🔗 链接已复制，快去分享吧"); });
-  $("#detailBody").querySelector("[data-report]").addEventListener("click", () => toast("已收到举报，平台会在 24h 内核实"));
+  $("#detailBody").querySelector("[data-report]").addEventListener("click", () => openReport(it));
   const sendCmt = async () => {
     const v = $("#cmtInput").value.trim(); if (!v) return;
     if (DB.isOnline() && it.dbid) { try { const u = await DB.uid(); await DB.insertWorkComment(it.dbid, v, u); } catch (e2) { toast("评论同步失败：" + (e2.message || e2)); return; } }
@@ -583,7 +562,7 @@ function suggestTags(q) {
 function renderPreview() {
   const title = $("#upTitle").value.trim() || "你的作品标题";
   const custom = up.cover === 8 && up.customCover;
-  const it = { id: 0, title, emoji: custom ? "🖼️" : COVERS[up.cover][0], g: custom ? 0 : COVERS[up.cover][1], coverURL: custom ? up.customCover : null, tags: up.tags, price: up.priceMode === "free" ? 0 : (+$("#upPrice").value || 0), author: "澄", downloads: 0 };
+  const it = { id: 0, title, emoji: custom ? "🖼️" : COVERS[up.cover][0], g: custom ? 0 : COVERS[up.cover][1], coverURL: custom ? up.customCover : null, tags: up.tags, price: 0, author: "澄", downloads: 0 };
   $("#previewMini").innerHTML = `<div class="hint">📈 发布后卡片预览</div><div style="max-width:260px">${cardHTML(it)}</div>`;
 }
 function updateWizard() {
@@ -606,7 +585,7 @@ function validateStep() {
     msg = ok ? "" : !$("#upTitle").value.trim() ? "请填写标题" : !$("#upDesc").value.trim() ? "请填写功能介绍" : "至少选择 1 个标签";
     renderPreview();
   }
-  if (up.step === 3) { ok = up.priceMode === "free" || +$("#upPrice").value >= 1; msg = ok ? "" : "请设置 1 元以上的价格"; renderPreview(); }
+  if (up.step === 3) { ok = $("#upDisclaimer").checked; msg = ok ? "" : "请先阅读并勾选同意《免责声明》"; renderPreview(); }
   $("#stepNext").disabled = !ok;
   $("#stepHint").textContent = msg || $("#stepHint").textContent;
 }
@@ -692,21 +671,11 @@ $("#tagSuggest").addEventListener("click", (e) => {
 ["upTitle", "upDesc"].forEach((id) => $("#" + id).addEventListener("input", () => { validateStep(); renderPreview(); }));
 
 /* Step 3：定价 */
-$(".price-options").addEventListener("click", (e) => {
-  const b = e.target.closest(".price-opt"); if (!b) return;
-  up.priceMode = b.dataset.price;
-  $$(".price-opt").forEach((x) => x.classList.toggle("on", x === b));
-  $("#priceField").hidden = up.priceMode !== "paid";
-  $("#escrowNote").hidden = up.priceMode !== "paid";
-  validateStep();
-});
-$("#upPrice").addEventListener("input", () => { validateStep(); renderPreview(); });
-
 /* 步骤流转 */
 $("#uploadBtn").addEventListener("click", () => {
   if (!requireLogin()) return;
-  Object.assign(up, { step: 1, cover: 0, tags: [], priceMode: "free", customCover: null, shots: [], link: { url: "", pan: "", code: "", exp: "长期有效" }, linkMode: "pan", siteUrl: "" });
-  $("#upTitle").value = ""; $("#upDesc").value = ""; $("#upPrice").value = "";
+  Object.assign(up, { step: 1, cover: 0, tags: [], customCover: null, shots: [], link: { url: "", pan: "", code: "", exp: "长期有效" }, linkMode: "pan", siteUrl: "" });
+  $("#upTitle").value = ""; $("#upDesc").value = "";
   $("#panUrl").value = ""; $("#panCode").value = ""; $("#panDetect").hidden = true; $("#panErr").hidden = true;
   $("#siteUrl").value = ""; $("#siteErr").hidden = true;
   $$("#panExpiry .chip").forEach((x, i) => x.classList.toggle("on", i === 0));
@@ -722,7 +691,7 @@ $("#stepNext").addEventListener("click", async () => {
   const gi = custom ? 0 : COVERS[up.cover][1];
   const title = $("#upTitle").value.trim();
   /* 进入创作者中心的「审核中」列表 */
-  const entry = { mid: "m" + Date.now(), title, emoji: custom ? "🖼️" : COVERS[up.cover][0], g: gi, coverURL: custom ? up.customCover : null, status: "pending", price: up.priceMode === "free" ? 0 : +$("#upPrice").value, views: 0, downloads: 0, revenue: 0, date: new Date().toISOString().slice(0, 10), shots: [...up.shots], link: up.linkMode === "pan" ? { ...up.link } : null, linkKind: up.linkMode, siteUrl: up.linkMode === "url" ? up.siteUrl : "" };
+  const entry = { mid: "m" + Date.now(), title, emoji: custom ? "🖼️" : COVERS[up.cover][0], g: gi, coverURL: custom ? up.customCover : null, status: "pending", views: 0, downloads: 0, date: new Date().toISOString().slice(0, 10), shots: [...up.shots], link: up.linkMode === "pan" ? { ...up.link } : null, linkKind: up.linkMode, siteUrl: up.linkMode === "url" ? up.siteUrl : "" };
   MY.items.unshift(entry);
   closeAllModals();
   toast("📤 已提交审核，预计 2 小时内完成（演示约 5 秒）");
@@ -747,7 +716,7 @@ $("#stepNext").addEventListener("click", async () => {
       id: dbid || Date.now(), dbid, title,
       emoji: entry.emoji, g: gi, coverURL: entry.coverURL, shots: entry.shots, link: entry.link, linkKind: entry.linkKind, siteUrl: entry.siteUrl,
       type: up.tags.includes("skill") ? "skill" : (up.tags[0] || "其他"), tags: [...up.tags],
-      price: entry.price, author: ME, downloads: 0, likes: 0, ver: "v1.0",
+      price: 0, author: ME, downloads: 0, likes: 0, ver: "v1.0",
       fmt: entry.linkKind === "url" ? "网址作品" : (up.link.pan + " 链接"), size: entry.linkKind === "url" ? "" : up.link.exp,
       updated: entry.date, desc: $("#upDesc").value.trim(),
       comments: [], reviews: [], rating: 5, ratingCnt: 0,
@@ -1012,9 +981,8 @@ function renderProfile(name, tab) {
     ? (its.length ? `<div class="grid">${its.map((x, i) => cardHTML(x, i)).join("")}</div>` : empty)
     : tab === "posts"
       ? (posts.length ? posts.map(postHTML).join("") : empty)
-      : tab === "bought"
-        ? `<div class="panel" style="--i:0"><h3>已购买 <span style="font-weight:500;font-size:12px;color:var(--ink3)">${MY.purchased.length} 件 · 点「打开网盘」自动跳转并复制提取码</span></h3>${MY.purchased.map((b, i) => { const it = ITEMS.find((x) => x.id === b.id); if (!it) return ""; const [g1, g2] = grad(it.g); return `<div class="buy-line" style="--g1:${g1};--g2:${g2};--i:${i}"><span class="cov">${it.emoji}</span><div class="bi"><b>${esc(it.title)}</b><small>${b.time} 获取 · ${b.price === 0 ? "免费" : "¥" + b.price} · ${it.link ? esc(it.link.pan) : ""}</small></div><span class="st st-online">已完成</span><button class="op-btn" data-viewitem="${b.id}">查看</button><button class="op-btn" data-openpan="${b.id}">打开网盘</button></div>`; }).join("") || empty}</div>`
-        : `<div class="panel" style="--i:0"><h3>收到的评价</h3>${its.flatMap((x) => x.reviews.map((r) => ({ ...r, it: x }))).map((r) => { const [g1, g2] = grad(r.a.length + 3); return `<div class="review" style="--g1:${g1};--g2:${g2}"><div class="rv-head"><i data-goto-user="${esc(r.a)}" style="cursor:pointer">${esc(r.a[0])}</i><b data-goto-user="${esc(r.a)}" style="cursor:pointer">${esc(r.a)}</b><span class="stars">${starsHTML(r.s)}</span><small>评价了《${esc(r.it.title)}》 · ${r.time}</small></div><p>${esc(r.t)}</p></div>`; }).join("") || empty}</div>`;
+      
+      : `<div class="panel" style="--i:0"><h3>收到的评价</h3>${its.flatMap((x) => x.reviews.map((r) => ({ ...r, it: x }))).map((r) => { const [g1, g2] = grad(r.a.length + 3); return `<div class="review" style="--g1:${g1};--g2:${g2}"><div class="rv-head"><i data-goto-user="${esc(r.a)}" style="cursor:pointer">${esc(r.a[0])}</i><b data-goto-user="${esc(r.a)}" style="cursor:pointer">${esc(r.a)}</b><span class="stars">${starsHTML(r.s)}</span><small>评价了《${esc(r.it.title)}》 · ${r.time}</small></div><p>${esc(r.t)}</p></div>`;
   const av = u.avatar || {};
   let avatarInner, avBg = `linear-gradient(135deg,${p1},${p2})`;
   if (av.type === "zodiac") { const z = ZODIAC.find((x) => x[0] === av.v) || ZODIAC[0]; const [za, zb] = grad(z[2]); avatarInner = `<span style="font-size:46px;text-shadow:0 2px 6px rgba(0,0,0,.3)">${z[1]}</span>`; avBg = `linear-gradient(135deg,${za},${zb})`; }
@@ -1072,7 +1040,6 @@ function renderProfile(name, tab) {
         <button class="tab${tab === "works" ? " on" : ""}" data-ptab="works">作品 ${its.length}</button>
         <button class="tab${tab === "posts" ? " on" : ""}" data-ptab="posts">动态 ${posts.length}</button>
         <button class="tab${tab === "reviews" ? " on" : ""}" data-ptab="reviews">评价</button>
-        ${isSelf ? `<button class="tab${tab === "bought" ? " on" : ""}" data-ptab="bought">🛍️ 已购买 ${MY.purchased.length}</button>` : ""}
       </div></div>
       <div id="pBody">${body}</div>
     </div>
@@ -1354,7 +1321,8 @@ function renderStudio(tab) {
     setTimeout(() => renderStudio(studioTab), 500);
     return;
   }
-  const tabs = [["overview", "概览"], ["works", "我的作品"], ["earnings", "收益"], ["settings", "设置"]];
+  const tabs = [["overview", "概览"], ["works", "我的作品"], ["settings", "设置"]];
+  if (!tabs.some(([k]) => k === tab)) tab = "overview";
   el.innerHTML = `<div class="studio-head">
       <div><h2>创作者中心</h2><p>欢迎回来，澄 · 上次登录 今天 08:12</p></div>
       <button class="btn btn-primary" id="studioUpload">＋ 上传新作品</button>
@@ -1364,24 +1332,23 @@ function renderStudio(tab) {
   const body = $("#studioBody");
   const pending = MY.items.filter((x) => x.status === "pending").length;
   if (tab === "overview") {
-    const escrow = MY.txs.filter((x) => x.status === "托管中").reduce((s, x) => s + x.amt, 0);
+    const dls = MY.items.reduce((s, x) => s + (x.downloads || 0), 0);
+    const likesSum = MY.items.reduce((s, x) => s + (x.likes || 0), 0);
     body.innerHTML = `
       <div class="stat-cards">
-        <div class="stat-card" style="--i:0"><small>今日收益</small><div class="num" data-count="${MY.today}" data-pre="¥">¥0</div><div class="delta">↑ 12% 较昨日</div><span class="ico">💰</span></div>
-        <div class="stat-card" style="--i:1"><small>本月收益</small><div class="num" data-count="${MY.month}" data-pre="¥" data-dec="1">¥0</div><div class="delta">↑ 8% 较上月</div><span class="ico">📈</span></div>
-        <div class="stat-card" style="--i:2"><small>可提现余额</small><div class="num" data-count="${MY.balance}" data-pre="¥" data-dec="1">¥0</div><div class="delta" style="color:var(--ink3)">含托管中 ¥${escrow.toFixed(2)} 除外</div><span class="ico">🏦</span></div>
-        <div class="stat-card" style="--i:3"><small>累计收益</small><div class="num" data-count="${MY.total}" data-pre="¥" data-dec="1">¥0</div><div class="delta">已运营 480 天</div><span class="ico">🏆</span></div>
+        <div class="stat-card" style="--i:0"><small>我的作品</small><div class="num" data-count="${MY.items.length}">0</div><div class="delta">${pending} 个审核中</div><span class="ico">📦</span></div>
+        <div class="stat-card" style="--i:1"><small>总下载</small><div class="num" data-count="${dls}">0</div><div class="delta">全部免费分享</div><span class="ico">⬇️</span></div>
+        <div class="stat-card" style="--i:2"><small>获赞</small><div class="num" data-count="${likesSum}">0</div><div class="delta">感谢每一份认可</div><span class="ico">⭐</span></div>
+        <div class="stat-card" style="--i:3"><small>粉丝</small><div class="num" data-count="${(USERS[ME] || {}).followers || 0}">0</div><div class="delta">持续创作中</div><span class="ico">❤️</span></div>
       </div>
       <div class="duo">
-        <div class="panel" style="--i:2"><h3>近 7 天收益趋势</h3><div class="chart">${MY.chart.map((v, i) => `<div class="bar" style="--h:${Math.min(100, Math.round(v / 220 * 100))}%;--i:${i}" title="周${"一二三四五六日"[i]} ¥${v}"><b>¥${v}</b><i></i><span>周${"一二三四五六日"[i]}</span></div>`).join("")}</div></div>
+        <div class="panel" style="--i:2"><h3>最近作品 <span class="more" data-goto="#/studio?tab=works">管理作品 →</span></h3>${MY.items.length ? `<div class="tbl-wrap"><table class="tbl"><tbody>${MY.items.slice(0, 5).map((x) => { const [g1, g2] = grad(x.g); return `<tr><td><div class="it-cell" style="--g1:${g1};--g2:${g2}"><span class="cov">${x.emoji}</span><div><b>${esc(x.title)}</b><small>${stMap[x.status] ? stMap[x.status][1] : x.status} · ${fmtDl(x.downloads || 0)} 下载</small></div></div></td></tr>`; }).join("")}</tbody></table></div>` : `<div class="chat-empty" style="padding:26px">还没有作品，点右上角「上传新作品」开始创作吧</div>`}</div>
         <div class="panel" style="--i:3"><h3>待处理</h3>
           <div class="todo-item" data-goto="#/studio?tab=works">🔍<span>审核中的作品</span><b class="t-num">${pending}</b></div>
-          <div class="todo-item" data-goto="#/studio?tab=earnings">🛡️<span>托管中订单 · 等待买家确认收货</span><b class="t-num">${MY.txs.filter((x) => x.status === "托管中").length}</b></div>
-          <div class="todo-item" data-goto="#/studio?tab=earnings">💸<span>可提现余额</span><b class="t-num">¥${MY.balance.toFixed(2)}</b></div>
           <div class="todo-item" data-goto="#/community">💬<span>社区新评论</span><b class="t-num">2</b></div>
+          <div class="todo-item" data-goto="#/studio?tab=settings">🎨<span>自定义主页形象</span><b class="t-num"></b></div>
         </div>
-      </div>
-      <div class="panel" style="--i:4"><h3>最近订单 <span class="more" data-goto="#/studio?tab=earnings">全部收益 →</span></h3>${txTable(MY.txs.slice(0, 3))}</div>`;
+      </div>`;
   }
   if (tab === "works") {
     const flt = renderStudio._flt || "全部";
@@ -1397,18 +1364,6 @@ function renderStudio(tab) {
         <td><div class="ops"><button class="op-btn" data-op="data">数据</button><button class="op-btn" data-op="edit">编辑</button><button class="op-btn" data-op="${x.status === "online" ? "off" : "on"}">${x.status === "online" ? "下架" : "上架"}</button></div></td>
       </tr>`; }).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--ink3);padding:26px">该状态下暂无作品</td></tr>`}</tbody></table></div></div>`;
     body.dataset.flt = flt;
-  }
-  if (tab === "earnings") {
-    const escrow = MY.txs.filter((x) => x.status === "托管中").reduce((s, x) => s + x.amt, 0);
-    body.innerHTML = `
-      <div class="stat-cards">
-        <div class="stat-card" style="--i:0"><small>可提现余额</small><div class="num" data-count="${MY.balance}" data-pre="¥" data-dec="1">¥0</div><div class="delta" style="color:var(--ink3)">手续费率 5%</div><span class="ico">🏦</span></div>
-        <div class="stat-card" style="--i:1"><small>托管中</small><div class="num" data-count="${escrow}" data-pre="¥">¥0</div><div class="delta" style="color:var(--ink3)">买家确认收货后打款</div><span class="ico">🛡️</span></div>
-        <div class="stat-card" style="--i:2"><small>本月收益</small><div class="num" data-count="${MY.month}" data-pre="¥" data-dec="1">¥0</div><div class="delta">↑ 8%</div><span class="ico">📈</span></div>
-        <div class="stat-card" style="--i:3"><small>累计收益</small><div class="num" data-count="${MY.total}" data-pre="¥" data-dec="1">¥0</div><div class="delta">480 天</div><span class="ico">🏆</span></div>
-      </div>
-      <div class="panel" style="--i:4"><h3>收益明细 <button class="btn btn-primary" id="withDraw" style="height:34px;padding:0 16px;font-size:13px">提现到支付宝</button></h3>${txTable(MY.txs)}
-      <p style="font-size:12px;color:var(--ink3);margin-top:12px">🛡️ 交易保障：买家付款后进入平台托管，买家确认收货后 24h 内打款（扣除 5% 手续费）；未确认收货的订单买家可随时申请退款。</p></div>`;
   }
   if (tab === "settings") {
     const bgCards = Object.entries(BGS).map(([k, d]) => {
@@ -1445,10 +1400,6 @@ function renderStudio(tab) {
           <span class="lab">昵称</span><input type="text" value="${esc(ME)}" id="setName">
           <span class="lab">简介</span><textarea rows="2" id="setBio">${esc(USERS[ME].bio)}</textarea>
         </div>
-      </div>
-      <div class="panel" style="--i:3"><h3>收款方式</h3>
-        <div class="pay-methods"><button class="pay-m on">支付宝</button><button class="pay-m">微信支付</button></div>
-        <p style="font-size:12px;color:var(--ink3);margin-top:12px">打款将在买家确认收货后 24h 内到账（平台手续费 5%）。</p>
       </div>
       <div class="panel" style="--i:4"><h3>通知偏好</h3>
         <div class="set-row"><div>审核与上架通知<small>作品审核通过或驳回时提醒我</small></div><label class="switch"><input type="checkbox" checked><i></i></label></div>
@@ -1722,19 +1673,6 @@ $view("studio").addEventListener("click", (e) => {
     }
     return;
   }
-  if (e.target.closest("#withDraw")) {
-    const btn = e.target.closest("#withDraw");
-    if (btn.disabled) return;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spin"></span> 处理中…';
-    setTimeout(() => {
-      btn.classList.add("success"); btn.innerHTML = "✓ 已提交";
-      MY.balance = 0;
-      toast("💸 提现申请已提交，预计 1 个工作日到账");
-      setTimeout(() => renderStudio("earnings"), 1200);
-    }, 900);
-    return;
-  }
   if (e.target.closest("#setSave")) {
     USERS[ME].bio = $("#setBio").value.trim();
     if (DB.isOnline() && MYUID) DB.updateProfile(MYUID, { bio: USERS[ME].bio }).catch((e2) => toast("云同步失败：" + (e2.message || e2)));
@@ -1754,8 +1692,6 @@ $view("studio").addEventListener("click", (e) => {
   if (bs) { USERS[ME].bg = bs.dataset.bgsel; USERS[ME].bgImg = null; if (DB.isOnline() && MYUID) DB.updateProfile(MYUID, { bg: bs.dataset.bgsel, bg_img: null }).catch(() => {}); renderStudio("settings"); toast("背景已切换，去个人主页体验互动效果 →"); return; }
   if (e.target.closest("#avUpload")) { avFile.click(); return; }
   if (e.target.closest("#bgUpload")) { bgFile.click(); return; }
-  const pm = e.target.closest(".pay-m");
-  if (pm) { $$(".pay-m").forEach((x) => x.classList.toggle("on", x === pm)); toast("收款方式：已选择 " + pm.textContent); return; }
 });
 document.addEventListener("click", (e) => {
   const nl = e.target.closest("[data-needlogin]");
@@ -1821,19 +1757,7 @@ async function loadPublic() {
 async function loadMyData() {
   if (!MYUID) return;
   const myWorks = await DB.fetchMyWorks(MYUID);
-  MY.items = myWorks.map((w) => ({ mid: "m" + w.dbid, dbid: w.dbid, title: w.title, emoji: w.emoji, g: w.g, coverURL: w.coverURL, status: w.status, price: w.price, views: w.views, downloads: w.downloads, date: w.updated, link: w.link, linkKind: w.linkKind, siteUrl: w.siteUrl }));
-  MY.txs = await DB.fetchSellerOrders(MYUID);
-  const buy = await DB.fetchBuyerOrders(MYUID);
-  OWNED.clear(); MY.purchased = [];
-  buy.forEach((b) => { if (b.raw === "paid" || b.raw === "confirmed") { OWNED.add(b.work_id); MY.purchased.push({ id: b.work_id, time: b.date.slice(0, 10), price: b.amt }); } });
-  const e = await DB.myEarnings();
-  MY.total = +e.total || 0; MY.month = +e.month || 0; MY.balance = +e.total || 0;
-  const now = Date.now(), day = 86400000;
-  MY.chart = Array.from({ length: 7 }, (_, i) => {
-    const d0 = new Date(now - (6 - i) * day), key = d0.toISOString().slice(0, 10);
-    return MY.txs.filter((t) => (t.date || "").startsWith(key.slice(5))).reduce((s, t) => s + t.amt, 0);
-  });
-  MY.today = MY.chart[6];
+  MY.items = myWorks.map((w) => ({ mid: "m" + w.dbid, dbid: w.dbid, title: w.title, emoji: w.emoji, g: w.g, coverURL: w.coverURL, status: w.status, views: w.views, downloads: w.downloads, date: w.updated, link: w.link, linkKind: w.linkKind, siteUrl: w.siteUrl }));
   /* 私信会话 */
   const msgs = await DB.fetchMyMessages(MYUID);
   const groups = {};

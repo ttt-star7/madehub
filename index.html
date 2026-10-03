@@ -7,7 +7,7 @@
 <title>造物集 MadeHub — AI 造物市集</title>
 <meta name="description" content="发现、分享、出售你用 AI 创造的一切：Skill、软件、插件、素材、模型。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235B5BD6'/%3E%3Cpath d='M16 7l8 4.6v9L16 25l-8-4.4v-9L16 7z' fill='none' stroke='white' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M16 7v9m0 0l8-4.4M16 16l-8-4.4' stroke='white' stroke-width='2.4' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="styles.css?v=20260927">
+<link rel="stylesheet" href="styles.css?v=free001">
 </head>
 <body>
 
@@ -137,7 +137,7 @@
   <div class="container footer-inner">
     <span>© 2026 造物集 MadeHub · 让每一个 AI 造物被看见</span>
     <span class="footer-links">
-      <a href="#/community">社区</a><a href="#/rank">排行榜</a><a href="#/studio">创作者中心</a><a href="#">帮助中心</a><a href="#">创作者协议</a>
+      <a href="#/community">社区</a><a href="#/rank">排行榜</a><a href="#/studio">创作者中心</a><a href="#" data-disclaimer>免责声明</a><a href="#">创作者协议</a>
     </span>
   </div>
 </footer>
@@ -167,7 +167,7 @@
         <span class="step-line"></span>
         <span class="step" data-step="2"><i>2</i>信息与标签</span>
         <span class="step-line"></span>
-        <span class="step" data-step="3"><i>3</i>定价发布</span>
+        <span class="step" data-step="3"><i>3</i>确认发布</span>
       </div>
     </header>
 
@@ -249,29 +249,12 @@
 
     <!-- Step 3 -->
     <section class="upload-step" data-step="3" hidden>
-      <h3 class="upload-label">选择下载方式</h3>
-      <div class="price-options">
-        <button class="price-opt on" data-price="free">
-          <b>免费下载</b><small>所有人可免费获取，利于传播</small>
-        </button>
-        <button class="price-opt" data-price="paid">
-          <b>付费下载</b><small>设置价格，平台手续费仅 5%</small>
-        </button>
-      </div>
-      <label class="field price-field" id="priceField" hidden>
-        <span class="field-label">定价（元）<em>*</em></span>
-        <div class="price-input"><i>¥</i><input type="number" id="upPrice" min="1" max="9999" step="1" placeholder="19"></div>
+      <h3 class="upload-label">发布前确认</h3>
+      <label class="agree" style="margin:0 0 14px;align-items:flex-start">
+        <input type="checkbox" id="upDisclaimer">
+        <i style="margin-top:3px"></i>
+        <span style="font-size:13px;color:var(--ink2);line-height:1.7">我确认本作品内容合法、无侵权，外链可正常访问，并已阅读同意<a href="#" data-disclaimer>《免责声明》</a>。违规作品将被举报下架。</span>
       </label>
-      <div class="escrow-note" id="escrowNote" hidden>
-        <b>🛡️ 交易保障 · 保护买卖双方</b>
-        <div class="escrow-flow">
-          <span class="ef-step">买家付款<br><small>平台托管</small></span><i>→</i>
-          <span class="ef-step">下载使用<br><small>验证内容</small></span><i>→</i>
-          <span class="ef-step on">确认收货<br><small>买家主动</small></span><i>→</i>
-          <span class="ef-step">打款卖家<br><small>扣 5% 手续费</small></span>
-        </div>
-        <p>买家付款后款项由平台托管，<b>确认收货后</b>才会打给卖家；未确认收货可随时申请退款，保护买卖双方权益。</p>
-      </div>
       <div class="preview-mini" id="previewMini"><!-- JS 渲染卡片预览 --></div>
     </section>
 
@@ -341,20 +324,35 @@
 </div>
 
 <!-- ======= 支付弹窗 ======= -->
-<div class="modal" id="payModal" hidden>
+<div class="modal" id="reportModal" hidden>
   <div class="modal-backdrop" data-close></div>
-  <div class="modal-panel pay-panel" role="dialog" aria-modal="true" aria-label="确认购买">
+  <div class="modal-panel pay-panel" role="dialog" aria-modal="true" aria-label="举报作品">
     <button class="modal-close" data-close aria-label="关闭">
       <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
     </button>
-    <h2 class="pay-title">确认购买</h2>
-    <div class="pay-item" id="payItem"><!-- JS 渲染 --></div>
-    <div class="pay-methods-v" id="payMethods">
-      <button class="pay-v on" data-payv="微信支付" type="button"><b class="wx"></b>微信支付</button>
-      <button class="pay-v" data-payv="支付宝" type="button"><b class="zfb"></b>支付宝</button>
+    <h2 class="pay-title">⚠️ 举报作品</h2>
+    <p class="pay-note" style="margin:6px 0 14px">请选择举报理由。同一作品累计 <b>5</b> 人举报将<b>自动下架</b>并通知作者复核。</p>
+    <div class="pay-item" id="reportItem"><!-- JS 渲染 --></div>
+    <div class="chips" id="reportReasons" style="margin:4px 0 12px"></div>
+    <textarea id="reportText" rows="3" placeholder="补充说明（选填，20 字以上更有助于平台核实）" maxlength="200" style="width:100%;border:1.5px solid var(--line);border-radius:11px;padding:10px 13px;font:inherit;font-size:14px;margin-bottom:14px"></textarea>
+    <button class="btn btn-primary" id="reportSubmit" type="button" style="width:100%;height:46px">提交举报</button>
+  </div>
+</div>
+
+<div class="modal" id="disclaimerModal" hidden>
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal-panel login-panel" role="dialog" aria-modal="true" aria-label="免责声明">
+    <button class="modal-close" data-close aria-label="关闭">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    </button>
+    <h2 class="disclaimer-title">免责声明</h2>
+    <div class="disclaimer-body">
+      <p><b>一、内容来源与责任</b><br>本站所有作品均由用户自行上传。创作者应保证其上传的内容（含外链指向的内容）合法、原创或已获授权，且不含病毒、恶意代码。因使用作品产生的一切纠纷与损失，由创作者与使用者自行承担，与本平台无关。</p>
+      <p><b>二、外链说明</b><br>作品通过网盘链接或外部网址分享，本平台不存储、不审查其完整内容，亦不控制外链页面的可用性与安全性。点击前请自行判断风险。</p>
+      <p><b>三、举报与下架</b><br>任一作品被 <b>5</b> 名不同用户举报后将被自动下架并通知作者复核。如发现违法违规、侵权盗版内容，请立即使用详情页「举报」功能，我们将在核实后永久移除。</p>
+      <p><b>四、免费分享</b><br>本站全部作品免费分享，平台不参与任何资金往来。任何以本站名义的收费行为均与本平台无关，请勿转账。</p>
+      <p><b>五、服务变更</b><br>本平台有权对违规账号采取下架、封禁等措施，并可能调整服务内容。</p>
     </div>
-    <button class="btn btn-primary" id="payConfirm" type="button">确认支付</button>
-    <p class="pay-note">支付完成后即可打开网盘链接，提取码自动复制 · 未确认收货可随时申请退款</p>
   </div>
 </div>
 
@@ -378,8 +376,8 @@
 </div>
 <script src="vendor/supabase.js"></script>
 <script src="vendor/purify.min.js"></script>
-<script src="config.js?v=20260927"></script>
-<script src="db.js?v=20260927"></script>
-<script src="app.js?v=20260927"></script>
+<script src="config.js?v=free001"></script>
+<script src="db.js?v=free001"></script>
+<script src="app.js?v=free001"></script>
 </body>
 </html>
