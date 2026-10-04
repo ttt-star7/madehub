@@ -977,13 +977,19 @@ function renderProfile(name, tab) {
   const dls = its.reduce((s, x) => s + x.downloads, 0);
   const [p1, p2] = grad(u.g);
   const empty = `<div class="empty" style="padding:44px 0"><div class="empty-emoji">🌱</div><p>还没有内容</p></div>`;
-  const body = tab === "works"
-    ? (its.length ? `<div class="grid">${its.map((x, i) => cardHTML(x, i)).join("")}</div>` : empty)
-    : tab === "posts"
-      ? (posts.length ? posts.map(postHTML).join("") : empty)
-      
-      : `<div class="panel" style="--i:0"><h3>收到的评价</h3>${its.flatMap((x) => x.reviews.map((r) => ({ ...r, it: x }))).map((r) => { const [g1, g2] = grad(r.a.length + 3); return `<div class="review" style="--g1:${g1};--g2:${g2}"><div class="rv-head"><i data-goto-user="${esc(r.a)}" style="cursor:pointer">${esc(r.a[0])}</i><b data-goto-user="${esc(r.a)}" style="cursor:pointer">${esc(r.a)}</b><span class="stars">${starsHTML(r.s)}</span><small>评价了《${esc(r.it.title)}》 · ${r.time}</small></div><p>${esc(r.t)}</p></div>`;
-  const av = u.avatar || {};
+  let body;
+  if (tab === "works") {
+    body = its.length ? `<div class="grid">${its.map((x, i) => cardHTML(x, i)).join("")}</div>` : empty;
+  } else if (tab === "posts") {
+    body = posts.length ? posts.map(postHTML).join("") : empty;
+  } else {
+    const reviewItems = its.flatMap((x) => x.reviews.map((r) => ({ ...r, it: x })));
+    const reviewHtml = reviewItems.map((r) => {
+      const [g1, g2] = grad(r.a.length + 3);
+      return `<div class="review" style="--g1:${g1};--g2:${g2}"><div class="rv-head"><i data-goto-user="${esc(r.a)}" style="cursor:pointer">${esc(r.a[0])}</i><b>${esc(r.a)}</b><span class="stars">${starsHTML(r.s)}</span><small>评价了《${esc(r.it.title)}》 · ${r.time}</small></div><p>${esc(r.t)}</p></div>`;
+    }).join("");
+    body = `<div class="panel" style="--i:0"><h3>收到的评价</h3>${reviewHtml || empty}</div>`;
+  }
   let avatarInner, avBg = `linear-gradient(135deg,${p1},${p2})`;
   if (av.type === "zodiac") { const z = ZODIAC.find((x) => x[0] === av.v) || ZODIAC[0]; const [za, zb] = grad(z[2]); avatarInner = `<span style="font-size:46px;text-shadow:0 2px 6px rgba(0,0,0,.3)">${z[1]}</span>`; avBg = `linear-gradient(135deg,${za},${zb})`; }
   else if (av.type === "img") { avatarInner = `<img class="av-img" src="${av.url}" alt="">`; avBg = "#26262E"; }
