@@ -754,6 +754,8 @@ function route() {
   if (view === "profile") renderProfile(decodeURIComponent(seg[1] || ME), q.get("tab") || "works");
   if (view === "studio") renderStudio(q.get("tab") || studioTab);
   if (view === "messages") renderMessages(q.get("to") ? decodeURIComponent(q.get("to")) : null);
+  const msgBtn = $("#msgBtn"); if (msgBtn) msgBtn.classList.toggle("active", view === "messages");
+  if (view === "messages") updateMsgBadge();
   window.scrollTo({ top: 0 });
 }
 window.addEventListener("hashchange", route);
@@ -1090,13 +1092,24 @@ function renderMessages(openWho) {
 function sendChat() {
   const conv = CONVS.find((x) => x.who === messagesCur); if (!conv) return;
   const input = $("#chatText"); const v = input.value.trim(); if (!v) return;
-  conv.msgs.push({ me: true, t: v, time: "刚刚" });
-  renderMessages(conv.who);
-  const b = $("#chatBody"); if (b) b.scrollTop = b.scrollHeight;
+  const msg = { me: true, t: v, time: "刚刚" };
+  conv.msgs.push(msg);
+  /* 只追加气泡，不全量重绘：输入框保持焦点、无滚动跳动，秒级反馈 */
+  const bodyEl = $("#chatBody");
+  if (bodyEl) { bodyEl.insertAdjacentHTML("beforeend", bubbleHTML(msg, conv.who)); bodyEl.scrollTop = bodyEl.scrollHeight; }
+  input.value = ""; input.focus();
+  $$(".conv-item").forEach((el) => { if (el.dataset.conv === conv.who) { const sm = el.querySelector(".ci-main small"); if (sm) sm.textContent = v; } });
   if (DB.isOnline() && MYUID) {
-    const other = DB.uidOf(messagesCur);
-    if (other) { const key = [MYUID, other].sort().join("|"); DB.sendMessage(key, MYUID, other, v).catch((e) => toast("消息同步失败：" + (e.message || e))); }
-  }
+    const other = DB.uidOf(conv.who);
+    if (other) {
+      const key = [MYUID, other].sort().join("|");
+      DB.sendMessage(key, MYUID, other, v).then(() => {
+        /* 给对方推送一条站内通知，铃铛立即可见 */
+        DB.pushNotif(other, { ico: "✉️", bg: "--accent-soft", text: ME + " 给你发来新私信：" + (v.length > 24 ? v.slice(0, 24) + "…" : v), go: "#/messages" });
+        toast("✓ 已发送给 " + conv.who);
+      }).catch((e) => { msg.time = "未同步"; toast("消息同步失败：" + (e.message || e)); });
+    } else toast("⚠️ 对方资料未加载，消息已保存在本地");
+  } else toast("已发送（未连接数据库，仅本地可见）");
 }
 $view("messages").addEventListener("click", (e) => {
   const cv = e.target.closest("[data-conv]");
@@ -1104,6 +1117,52 @@ $view("messages").addEventListener("click", (e) => {
   if (e.target.closest("#chatSend")) sendChat();
 });
 $view("messages").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.id === "chatText") sendChat(); });
+
+/* ---- 私信：未读角标 + 实时接收（实时订阅 + 6 秒轮询双通道） ---- */
+function unreadDmCount() { return CONVS.reduce((s, c) => s + (c.unread || 0), 0); }
+function updateMsgBadge() {
+  const b = $("#msgBadge"); if (!b) return;
+  const n = unreadDmCount();
+  b.hidden = n === 0;
+  b.textContent = n > 9 ? "9+" : n;
+  if (n > 0) { b.style.animation = "none"; void b.offsetWidth; b.style.animation = ""; }
+}
+const seenMsgIds = new Set();
+function handleIncoming(m) {
+  if (!m || seenMsgIds.has(m.id)) return;
+  seenMsgIds.add(m.id);
+  const nick = DB.nickOf(m.senderUid);
+  if (!nick || nick === ME) return;
+  let conv = CONVS.find((x) => x.who === nick);
+  if (!conv) { conv = { who: nick, unread: 0, msgs: [] }; CONVS.unshift(conv); }
+  conv.msgs.push({ me: false, t: m.t, time: m.time || "刚刚" });
+  if (messagesCur === nick && !$("#view-messages").hidden) {
+    const bodyEl = $("#chatBody");
+    if (bodyEl) { bodyEl.insertAdjacentHTML("beforeend", bubbleHTML({ me: false, t: m.t, time: m.time || "刚刚" }, nick)); bodyEl.scrollTop = bodyEl.scrollHeight; }
+  } else {
+    conv.unread = (conv.unread || 0) + 1;
+  }
+  updateMsgBadge();
+  toast("💬 " + nick + "：" + (m.t.length > 26 ? m.t.slice(0, 26) + "…" : m.t));
+}
+let lastPollIso = new Date(Date.now() - 10000).toISOString();
+async function pollIncoming() {
+  if (!ME || !DB.isOnline() || !MYUID) return;
+  try {
+    const rows = await DB.fetchNewIncoming(MYUID, lastPollIso);
+    lastPollIso = new Date(Date.now() - 2000).toISOString();
+    rows.forEach(handleIncoming);
+  } catch (_) {}
+}
+let dmLiveStarted = false;
+function startDmLive() {
+  updateMsgBadge();
+  if (dmLiveStarted || !ME) return;
+  dmLiveStarted = true;
+  DB.subscribeMessages(handleIncoming);
+  pollIncoming();
+  setInterval(pollIncoming, 6000);
+}
 
 /* ---- 通用列表弹窗（粉丝 / 关注 / 获赞 / 下载） ---- */
 let currentListKind = "fans";
@@ -1765,10 +1824,16 @@ async function loadMyData() {
   if (!MYUID) return;
   const myWorks = await DB.fetchMyWorks(MYUID);
   MY.items = myWorks.map((w) => ({ mid: "m" + w.dbid, dbid: w.dbid, title: w.title, emoji: w.emoji, g: w.g, coverURL: w.coverURL, status: w.status, views: w.views, downloads: w.downloads, date: w.updated, link: w.link, linkKind: w.linkKind, siteUrl: w.siteUrl }));
-  /* 私信会话 */
+  /* 私信会话（尾随未读：最后一条 outgoing 之后的 incoming 计为未读） */
   const msgs = await DB.fetchMyMessages(MYUID);
   const groups = {};
-  msgs.forEach((m) => { const other = m.me ? DB.nickOf(m.receiverUid) : m.a; if (!other) return; (groups[other] = groups[other] || { who: other, unread: 0, msgs: [] }).msgs.push({ me: m.me, t: m.t, time: m.time }); });
+  msgs.forEach((m) => {
+    seenMsgIds.add(m.id);
+    const other = m.me ? DB.nickOf(m.receiverUid) : m.a; if (!other) return;
+    const g = (groups[other] = groups[other] || { who: other, unread: 0, msgs: [] });
+    g.msgs.push({ me: m.me, t: m.t, time: m.time });
+  });
+  Object.values(groups).forEach((g) => { let un = 0; for (let i = g.msgs.length - 1; i >= 0; i--) { if (g.msgs[i].me) break; un++; } g.unread = un; });
   CONVS = Object.values(groups);
 }
 async function loadNotifs() {
@@ -1809,10 +1874,11 @@ async function boot() {
       if (!USERS[ME]) USERS[ME] = { g: nickHash(ME) };
       USERS[ME].bg = USERS[ME].bg || "aurora";
       await loadSocial(MYUID); await loadMyData(); await loadNotifs();
+      startDmLive();
     }
     await loadPublic();
   } catch (e) { console.warn("数据加载失败：", e); $("#dbBanner").hidden = false; return; }
-  renderGrid(); route();
+  renderGrid(); updateMsgBadge(); route();
   afterBootAll();
 }
 function afterBootAll() { while (bootQueue.length) { try { bootQueue.shift()(); } catch (e) { console.warn(e); } } }

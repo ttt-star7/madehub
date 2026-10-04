@@ -362,6 +362,7 @@ img{display:block;max-width:100%}
 /* ---- 顶栏图标按钮 / 通知 / 用户菜单 ---- */
 .icon-btn{position:relative;width:38px;height:38px;border-radius:11px;display:grid;place-items:center;color:var(--ink2);transition:.16s var(--ease)}
 .icon-btn:hover{background:var(--input-bg);color:var(--ink)}
+.icon-btn.active{background:var(--accent-soft);color:var(--accent)}
 .icon-btn svg{width:19px;height:19px}
 .icon-btn.spin svg{animation:spinIn .4s var(--ease)}
 @keyframes spinIn{from{transform:rotate(-120deg) scale(.6);opacity:0}}

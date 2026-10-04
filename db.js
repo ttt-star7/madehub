@@ -330,13 +330,34 @@ window.DB = (function () {
     return data || [];
   }
   async function fetchMyMessages(uid) {
-    const { data, error } = await client.from("messages").select("*, profiles!sender(nickname)").or(`sender.eq.${uid},receiver.eq.${uid}`).order("created_at", { ascending: true });
+    const { data, error } = await client.from("messages").select("id,sender,receiver,body,created_at,profiles!sender(nickname)").or(`sender.eq.${uid},receiver.eq.${uid}`).order("created_at", { ascending: true });
     if (error) throw error;
     return (data || []).map((m) => ({
+      id: m.id,
       senderUid: m.sender, receiverUid: m.receiver,
       a: m.profiles?.nickname || (m.sender === uid ? (names[m.sender] || "我") : (names[m.receiver] || "对方")),
       me: m.sender === uid, t: m.body, time: (m.created_at || "").slice(5, 16).replace("T", " "),
     }));
+  }
+  /* 拉取某时间之后发给当前用户的新私信（轮询用） */
+  async function fetchNewIncoming(uid, sinceIso) {
+    const { data, error } = await client.from("messages").select("id,sender,body,created_at").eq("receiver", uid).gt("created_at", sinceIso).order("created_at", { ascending: true }).limit(50);
+    if (error) throw error;
+    return (data || []).map((m) => ({ id: m.id, senderUid: m.sender, t: m.body, time: (m.created_at || "").slice(5, 16).replace("T", " ") }));
+  }
+  /* 实时订阅私信（需在 Supabase 把 messages 表加入 supabase_realtime publication；未开启时自动退回轮询） */
+  async function subscribeMessages(onMsg) {
+    if (!online) return false;
+    try {
+      const uid = await uid();
+      client.channel("messages-live")
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+          const m = payload.new || {};
+          if (m.receiver === uid) onMsg({ id: m.id, senderUid: m.sender, t: m.body, time: (m.created_at || "").slice(5, 16).replace("T", " ") });
+        })
+        .subscribe();
+      return true;
+    } catch (e) { console.warn("realtime subscribe failed:", e); return false; }
   }
 
   return {
@@ -351,5 +372,6 @@ window.DB = (function () {
     fetchNotifs, pushNotif, markAllNotifsRead,
     fetchMessages, sendMessage, uploadMedia,
     fetchSocial, fetchAllWorkComments, fetchAllReviews, fetchMyMessages,
+    fetchNewIncoming, subscribeMessages,
   };
 })();
