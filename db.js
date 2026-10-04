@@ -91,6 +91,27 @@ window.DB = (function () {
     return data;
   }
 
+  /* ---------- 网盘分享文本解析 ----------
+     用户常把网盘 App 复制的整段分享文本粘进来，这里提取纯链接与提取码 */
+  function parseShareLink(raw) {
+    const s = String(raw || "").trim();
+    if (!s) return { url: "", code: "" };
+    if (/^https?:\/\/\S+$/i.test(s)) {
+      let url = s;
+      let code = "";
+      const pwd = url.match(/[?&]pwd=([A-Za-z0-9]+)/i);
+      if (pwd) code = pwd[1];
+      return { url, code };
+    }
+    const m = s.match(/https?:\/\/[^\s"'，。；、）】」》]+/i);
+    let url = m ? m[0].replace(/[.,;:!?)\]}>"'’”]+$/, "") : "";
+    let code = "";
+    const kc = s.match(/(?:提取码|提取碼|密码|访问码)[：:\s]*([A-Za-z0-9]{4,10})/i);
+    if (kc) code = kc[1];
+    if (!code && url) { const pwd = url.match(/[?&]pwd=([A-Za-z0-9]+)/i); if (pwd) code = pwd[1]; }
+    return { url, code };
+  }
+
   /* ---------- 作品 ---------- */
   const WORK_SEL = "*, profiles!author(nickname)";
   function workToApp(row) {
@@ -106,9 +127,11 @@ window.DB = (function () {
       g: row.cover?.g ?? 0,
       coverURL: row.cover?.url || null,
       shots: row.shots || [],
-      link: row.link_kind === "url" ? null : {
-        pan: row.pan_brand || "网盘", url: row.pan_url || "", code: row.pan_code || "", exp: row.pan_exp || "长期有效",
-      },
+      link: row.link_kind === "url" ? null : (() => {
+        const raw = row.pan_url || "";
+        const parsed = parseShareLink(raw);
+        return { pan: row.pan_brand || "网盘", url: parsed.url || raw, code: row.pan_code || parsed.code || "", exp: row.pan_exp || "长期有效" };
+      })(),
       linkKind: row.link_kind || "pan",
       siteUrl: row.site_url || "",
       status: row.status,
@@ -384,6 +407,6 @@ window.DB = (function () {
     fetchNotifs, pushNotif, markAllNotifsRead,
     fetchMessages, sendMessage, uploadMedia,
     fetchSocial, fetchAllWorkComments, fetchAllReviews, fetchMyMessages,
-    fetchNewIncoming, subscribeMessages,
+    fetchNewIncoming, subscribeMessages, parseShareLink,
   };
 })();

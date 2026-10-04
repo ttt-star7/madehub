@@ -654,7 +654,17 @@ const PANS = [
 ];
 function detectPan(v) { for (const [re, name] of PANS) if (re.test(v)) return name; return ""; }
 $("#panUrl").addEventListener("input", (e) => {
-  const v = e.target.value.trim();
+  let v = e.target.value.trim();
+  /* 粘贴的是整段分享文本时：自动提取纯链接 + 提取码 */
+  if (v && !/^https?:\/\/\S+$/i.test(v) && /https?:\/\//i.test(v)) {
+    const p = DB.parseShareLink(v);
+    if (p.url) {
+      v = p.url;
+      e.target.value = v;
+      if (p.code && !$("#panCode").value) { $("#panCode").value = p.code; up.link.code = p.code; }
+      toast("✓ 已自动提取分享链接" + (p.code ? "和提取码" : ""));
+    }
+  }
   const pan = detectPan(v);
   up.link.url = v; up.link.pan = pan;
   $("#panDetect").hidden = !pan;
