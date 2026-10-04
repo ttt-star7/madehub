@@ -340,13 +340,10 @@ function openDetail(it) {
     $$(".thumb").forEach((t) => t.classList.toggle("on", t === th));
   });
   $("#detailBody").querySelector("[data-follow]").addEventListener("click", (e) => {
-    if (FOLLOWING.has(it.author)) {
-      FOLLOWING.delete(it.author); e.target.textContent = "+ 关注"; toast("已取消关注 " + it.author);
-      if (DB.isOnline() && MYUID) DB.setFollow(MYUID, it.author, false);
-    } else {
-      FOLLOWING.add(it.author); e.target.textContent = "已关注 ✓"; toast("已关注 " + it.author + "，动态会推送到社区");
-      if (DB.isOnline() && MYUID) DB.setFollow(MYUID, it.author, true);
-    }
+    const on = !FOLLOWING.has(it.author);
+    if (on) { FOLLOWING.add(it.author); e.target.textContent = "已关注 ✓"; toast("已关注 " + it.author); }
+    else { FOLLOWING.delete(it.author); e.target.textContent = "+ 关注"; toast("已取消关注 " + it.author); }
+    if (DB.isOnline() && MYUID) DB.setFollow(MYUID, it.author, on).then(() => loadSocial(MYUID)).catch(() => {});
   });
   $("#detailBody").querySelector("[data-buy]").addEventListener("click", () => {
     if (it.linkKind === "url") { openSite(it); return; }
@@ -1207,6 +1204,7 @@ function handleIncoming(m) {
   toast("💬 " + nick + "：" + (m.t.length > 26 ? m.t.slice(0, 26) + "…" : m.t));
 }
 let lastPollIso = new Date(Date.now() - 10000).toISOString();
+let pollTick = 0;
 async function pollIncoming() {
   if (!ME || !DB.isOnline() || !MYUID) return;
   try {
@@ -1214,6 +1212,8 @@ async function pollIncoming() {
     lastPollIso = new Date(Date.now() - 2000).toISOString();
     rows.forEach(handleIncoming);
   } catch (_) {}
+  /* 每 3 个轮询周期（约 18 秒）同步一次关注关系：别人关注你，粉丝数也会实时涨 */
+  if (++pollTick % 3 === 0) await loadSocial(MYUID).catch(() => {});
 }
 let dmLiveStarted = false;
 function startDmLive() {
@@ -1225,9 +1225,8 @@ function startDmLive() {
   setInterval(pollIncoming, 6000);
 }
 
-/* ---- 通用列表弹窗（粉丝 / 关注 / 获赞 / 下载） ---- */
+/* ---- 通用列表弹窗（粉丝 / 关注 / 获赞 / 下载）—— 全部真实数据 ---- */
 let currentListKind = "fans";
-const NAME_POOL = ["轻舟", "阿远", "甜粽", "南栀", "临风", "北岸", "云上工作室", "白露", "比特猫", "南山客"];
 function openStatList(kind) {
   currentListKind = kind;
   const name = profState.name;
@@ -1236,8 +1235,11 @@ function openStatList(kind) {
   $("#listTitle").textContent = (titles[kind] || "") + " · " + name;
   let html = "";
   if (kind === "fans" || kind === "following") {
-    const names = kind === "following" ? [...FOLLOWING] : NAME_POOL.filter((_, i) => (i + name.length) % 2 === 0).slice(0, 6);
-    html = names.map((n, i) => { const [g1, g2] = grad(n.length % GRADS.length); const u2 = USERS[n]; return `<div class="urow" style="--i:${i}"><i style="background:linear-gradient(135deg,${g1},${g2})">${esc(n[0])}</i><div class="ui"><b data-goto-user="${esc(n)}">${esc(n)}</b><small>${u2 && u2.verified ? "认证创作者" : "创作者"} · ${kind === "fans" ? "关注了你" : "你关注的创作者"}</small></div>${n !== ME ? `<button class="op-btn" data-listfollow="${esc(n)}">${FOLLOWING.has(n) ? "已关注" : "+ 关注"}</button>` : ""}</div>`; }).join("") || `<div class="chat-empty" style="padding:30px">暂无内容</div>`;
+    const names = ((kind === "fans" ? FOLLOWS_MAP.followers[name] : FOLLOWS_MAP.following[name]) || []).slice().reverse();
+    const emptyTip = kind === "fans"
+      ? (name === ME ? "还没有粉丝 · 持续分享优质作品，他们会慢慢出现" : "TA 还没有粉丝")
+      : (name === ME ? "还没有关注任何人 · 去看看感兴趣的创作人吧" : "TA 还没有关注任何人");
+    html = names.map((n, i) => { const [g1, g2] = grad(n.length % GRADS.length); const u2 = USERS[n]; return `<div class="urow" style="--i:${i}"><i style="background:linear-gradient(135deg,${g1},${g2})">${esc(n[0])}</i><div class="ui"><b data-goto-user="${esc(n)}">${esc(n)}</b><small>${u2 && u2.verified ? "认证创作者" : "创作者"} · ${kind === "fans" ? "关注了你" : "TA 关注的人"}</small></div>${n !== ME ? `<button class="op-btn" data-listfollow="${esc(n)}">${FOLLOWING.has(n) ? "已关注" : "+ 关注"}</button>` : ""}</div>`; }).join("") || `<div class="chat-empty" style="padding:30px">${emptyTip}</div>`;
   } else if (kind === "likes") {
     html = its.flatMap((x) => x.reviews.slice(0, 1).map((r) => ({ r, x }))).slice(0, 6).map(({ r, x }, i) => { const [g1, g2] = grad(r.a.length % GRADS.length); return `<div class="urow" style="--i:${i}"><i style="background:linear-gradient(135deg,${g1},${g2})">${esc(r.a[0])}</i><div class="ui"><b data-goto-user="${esc(r.a)}">${esc(r.a)}</b><small>赞了《${esc(x.title)}》 · ${r.time}</small></div><span class="num">⭐ ${r.s}</span></div>`; }).join("") || `<div class="chat-empty" style="padding:30px">还没有获赞记录</div>`;
   } else {
@@ -1422,14 +1424,19 @@ function openRename() {
 
 /* ---- 创作者中心 ---- */
 function countUp(el, target, dec = 0, pre = "") {
-  if (document.documentElement.classList.contains("flat")) { el.textContent = pre + target.toLocaleString("zh-CN", { minimumFractionDigits: dec, maximumFractionDigits: dec }); return; }
+  const finish = () => { el.textContent = pre + target.toLocaleString("zh-CN", { minimumFractionDigits: dec, maximumFractionDigits: dec }); };
+  /* 后台/最小化窗口 rAF 被暂停：加 setTimeout 兜底，1 秒内必定显示最终值 */
+  if (document.documentElement.classList.contains("flat")) { finish(); return; }
   const dur = 900, t0 = performance.now();
+  let done = false;
   const step = (t) => {
+    if (done) return;
     const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
     el.textContent = pre + (target * e).toLocaleString("zh-CN", { minimumFractionDigits: dec, maximumFractionDigits: dec });
-    if (k < 1) requestAnimationFrame(step);
+    if (k < 1) requestAnimationFrame(step); else done = true;
   };
   requestAnimationFrame(step);
+  setTimeout(() => { if (!done) { done = true; finish(); } }, dur + 150);
 }
 const stMap = { online: ["st-online", "已上线"], pending: ["st-pending", "审核中"], off: ["st-off", "已下架"] };
 const txSt = { "托管中": "st-pending", "已确认": "st-cfm", "已打款": "st-online", "已退款": "st-off" };
@@ -1769,7 +1776,7 @@ function sendFeedPost() {
   if (DB.isOnline() && uid) DB.insertFeedPost({ topic: "动态", text: v, tags: [] }, uid).then((dbid) => finish(dbid)).catch((e) => toast("发布失败：" + (e.message || e)));
   else finish(null);
 }
-$view("profile").addEventListener("click", (e) => {
+$view("profile").addEventListener("click", async (e) => {
   const lvChip = e.target.closest("[data-level]");
   if (lvChip) { openLevel(profState.name); return; }
   const joinChip = e.target.closest("[data-join]");
@@ -1781,7 +1788,14 @@ $view("profile").addEventListener("click", (e) => {
   const vi = e.target.closest("[data-viewitem]");
   if (vi) { openDetail(ITEMS.find((x) => x.id === +vi.dataset.viewitem)); return; }
   const lf = e.target.closest("[data-listfollow]");
-  if (lf) { const n = lf.dataset.listfollow; FOLLOWING.has(n) ? FOLLOWING.delete(n) : FOLLOWING.add(n); openStatList(currentListKind); return; }
+  if (lf) {
+    const n = lf.dataset.listfollow;
+    const on = !FOLLOWING.has(n);
+    FOLLOWING.has(n) ? FOLLOWING.delete(n) : FOLLOWING.add(n);
+    if (DB.isOnline() && MYUID) await DB.setFollow(MYUID, n, on).then(() => loadSocial(MYUID));
+    openStatList(currentListKind);
+    return;
+  }
   if (e.target.closest("#pMsg")) { openDM(profState.name); return; }
   const like = e.target.closest("[data-like]");
   if (like) { e.stopPropagation(); const it = ITEMS.find((x) => x.id === +like.closest(".card").dataset.id); it.liked = !it.liked; like.classList.toggle("liked", it.liked); toast(it.liked ? "❤️ 已加入收藏" : "已取消收藏"); return; }
@@ -1792,10 +1806,11 @@ $view("profile").addEventListener("click", (e) => {
   if (e.target.closest("#pFollow")) {
     const n = profState.name;
     if (n === ME) return;
+    const on = !FOLLOWING.has(n);
     FOLLOWING.has(n) ? FOLLOWING.delete(n) : FOLLOWING.add(n);
-    if (DB.isOnline() && MYUID) DB.setFollow(MYUID, n, FOLLOWING.has(n));
+    if (DB.isOnline() && MYUID) { await DB.setFollow(MYUID, n, on); await loadSocial(MYUID); }
     renderProfile(n, profState.tab);
-    toast(FOLLOWING.has(n) ? "已关注 " + n : "已取消关注");
+    toast(on ? "已关注 " + n : "已取消关注");
     return;
   }
   if (e.target.closest("#pMsg")) { toast("私信功能即将开放（演示）"); return; }
@@ -1875,14 +1890,43 @@ let bootDone = false;
 const bootQueue = [];
 function afterBoot(fn) { bootDone ? fn() : bootQueue.push(fn); }
 
+/* 关注关系：真实数据（follows 表）→ 双向映射 + 计数 */
+const FOLLOWS_MAP = { followers: {}, following: {} };
 async function loadSocial(myUid) {
   const social = await DB.fetchSocial();
+  Object.keys(USERS).forEach((k) => { USERS[k].followers = 0; USERS[k].following = 0; });
+  FOLLOWS_MAP.followers = {}; FOLLOWS_MAP.following = {};
+  FOLLOWING.clear();
   social.forEach((f) => {
+    if (f.follower === f.followee) return; /* 过滤自己关注自己的脏数据 */
     const a = DB.nickOf(f.follower), b = DB.nickOf(f.followee);
     if (!a || !b) return;
-    if (USERS[b]) USERS[b].followers = (USERS[b].followers || 0) + 1;
-    if (USERS[a]) USERS[a].following = (USERS[a].following || 0) + 1;
+    (FOLLOWS_MAP.followers[b] = FOLLOWS_MAP.followers[b] || []).push(a);
+    (FOLLOWS_MAP.following[a] = FOLLOWS_MAP.following[a] || []).push(b);
+    if (USERS[b]) USERS[b].followers++;
+    if (USERS[a]) USERS[a].following++;
     if (myUid && f.follower === myUid) FOLLOWING.add(b);
+  });
+  updateProfileStatsLive();
+}
+/* 主页统计瓦片数字实时刷新（关注/取关/他人关注你后立即生效） */
+function updateProfileStatsLive() {
+  if (!profState.name || $("#view-profile").hidden) return;
+  const u = USERS[profState.name]; if (!u) return;
+  const its = ITEMS.filter((x) => x.author === profState.name);
+  const vals = {
+    "作品": its.length,
+    "总下载": its.reduce((s, x) => s + (x.downloads || 0), 0),
+    "粉丝": u.followers || 0,
+    "获赞": its.reduce((s, x) => s + (x.likes || 0), 0),
+    "关注中": u.following || 0,
+  };
+  $$("#view-profile .p-stat").forEach((tile) => {
+    const lab = tile.querySelector("div > span");
+    const b = tile.querySelector("b");
+    if (!lab || !b) return;
+    const v = vals[lab.textContent.trim()];
+    if (v != null) b.textContent = v.toLocaleString("zh-CN");
   });
 }
 async function loadPublic() {
@@ -1955,14 +1999,14 @@ async function boot() {
   try {
     const sess = await DB.getSession();
     if (sess) { ME = await DB.ensureNickname(sess) || null; MYUID = sess.id; }
+    await loadPublic();
     if (ME) {
       if (!USERS[ME]) USERS[ME] = { g: nickHash(ME) };
       USERS[ME].bg = USERS[ME].bg || "aurora";
       await loadSocial(MYUID); await loadMyData(); await loadNotifs();
       startDmLive();
     }
-    await loadPublic();
-  } catch (e) { console.warn("数据加载失败：", e); $("#dbBanner").hidden = false; return; }
+  } catch (e) { console.warn("数据加载失败：", e); $("#dbBanner").hidden = false; }
   renderGrid(); updateMsgBadge(); route();
   afterBootAll();
 }
