@@ -990,6 +990,7 @@ function renderProfile(name, tab) {
     }).join("");
     body = `<div class="panel" style="--i:0"><h3>收到的评价</h3>${reviewHtml || empty}</div>`;
   }
+  const av = u.avatar || {};
   let avatarInner, avBg = `linear-gradient(135deg,${p1},${p2})`;
   if (av.type === "zodiac") { const z = ZODIAC.find((x) => x[0] === av.v) || ZODIAC[0]; const [za, zb] = grad(z[2]); avatarInner = `<span style="font-size:46px;text-shadow:0 2px 6px rgba(0,0,0,.3)">${z[1]}</span>`; avBg = `linear-gradient(135deg,${za},${zb})`; }
   else if (av.type === "img") { avatarInner = `<img class="av-img" src="${av.url}" alt="">`; avBg = "#26262E"; }
@@ -1366,7 +1367,7 @@ function renderStudio(tab) {
         <td><div class="it-cell" style="--g1:${g1};--g2:${g2}"><span class="cov">${x.emoji}</span><div><b>${esc(x.title)}</b><small>${x.date} 发布</small></div></div></td>
         <td><span class="st ${stMap[x.status][0]}">${stMap[x.status][1]}</span></td>
         <td>${x.price === 0 ? "免费" : "¥" + x.price}</td><td>${fmtDl(x.views)}</td><td>${fmtDl(x.downloads)}</td>
-        <td><b>¥${x.revenue.toLocaleString()}</b></td><td>${x.date}</td>
+        <td><b>¥${(x.revenue || 0).toLocaleString()}</b></td><td>${x.date}</td>
         <td><div class="ops"><button class="op-btn" data-op="data">数据</button><button class="op-btn" data-op="edit">编辑</button><button class="op-btn" data-op="${x.status === "online" ? "off" : "on"}">${x.status === "online" ? "下架" : "上架"}</button></div></td>
       </tr>`; }).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--ink3);padding:26px">该状态下暂无作品</td></tr>`}</tbody></table></div></div>`;
     body.dataset.flt = flt;
