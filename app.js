@@ -220,7 +220,21 @@ function shotHTML(it, i, main = false) {
   </div>`;
 }
 function starsHTML(v) { const f = Math.max(0, Math.min(5, Math.round(v))); return "★".repeat(f) + `<span class="off">${"★".repeat(5 - f)}</span>`; }
-function cmtHTML(c) { const [g1, g2] = grad(c.a.length % GRADS.length); return `<div class="cmt" style="--g1:${g1};--g2:${g2}"><i data-goto-user="${esc(c.a)}" style="cursor:pointer">${esc(c.a[0])}</i><div class="c-bubble"><b data-goto-user="${esc(c.a)}" style="cursor:pointer">${esc(c.a)}</b><p>${esc(c.t)}</p><small>${c.time || "刚刚"}</small></div></div>`; }
+function cmtHTML(c, opts = {}) {
+  const [g1, g2] = grad(c.a.length % GRADS.length);
+  const replyLink = ME ? `<a class="c-reply" data-creply="${c.id || ""}" ${opts.feed ? `data-fpid="${opts.feed}"` : ""} data-ctop="${c.parent_id || c.id || ""}" data-cname="${esc(c.a)}" data-istop="${c.parent_id ? 0 : 1}">回复</a>` : "";
+  return `<div class="cmt" style="--g1:${g1};--g2:${g2}"><i data-goto-user="${esc(c.a)}" style="cursor:pointer">${esc(c.a[0])}</i><div class="c-bubble"><b data-goto-user="${esc(c.a)}" style="cursor:pointer">${esc(c.a)}</b>${replyLink}<p>${esc(c.t)}</p><small>${c.time || "刚刚"}</small></div></div>`;
+}
+/* 评论树：两级嵌套（回复一律挂到顶层评论下，正文自带 @前缀） */
+function cmtTreeHTML(comments, feedId) {
+  const tops = comments.filter((c) => !c.parent_id);
+  const byP = {};
+  comments.forEach((c) => { if (c.parent_id) (byP[c.parent_id] = byP[c.parent_id] || []).push(c); });
+  return tops.map((c) => {
+    const replies = (byP[c.id] || []).slice().reverse().map((r) => cmtHTML(r, { feed: feedId })).join("");
+    return cmtHTML(c, { feed: feedId }) + `<div class="cmt-replies">${replies}</div>`;
+  }).join("");
+}
 function openPan(it) {
   const link = it.link;
   if (!link || !link.url) { toast("该作品暂无可用链接"); return; }
@@ -271,6 +285,7 @@ $("#reportSubmit").addEventListener("click", async () => {
 });
 function openDetail(it) {
   const [g1, g2] = grad(it.g);
+  let cmtReply = null;
   const related = ITEMS.filter((x) => x.id !== it.id && x.tags.some((t) => it.tags.includes(t))).slice(0, 3);
   $("#detailBody").innerHTML = `
     <div class="detail-gallery" style="--g1:${g1};--g2:${g2}">
@@ -311,7 +326,8 @@ function openDetail(it) {
       </div>
       <div class="xblock">
         <h4>💬 评论 <span class="cnt" id="cmtCnt">${it.comments.length} 条</span></h4>
-        <div id="cmtList">${it.comments.map(cmtHTML).join("")}</div>
+        <div id="cmtList">${cmtTreeHTML(it.comments)}</div>
+        <div class="reply-bar" id="cmtReplyBar" hidden><span></span><button data-ccancel type="button">取消回复 ×</button></div>
         <div class="cmt-input" style="margin-top:14px"><input id="cmtInput" placeholder="写下你的评论…（回车发送）"><button class="btn btn-primary" id="cmtSend" style="height:38px;padding:0 16px">发送</button></div>
       </div>
     </section>
@@ -341,14 +357,48 @@ function openDetail(it) {
   if (dmBtn) dmBtn.addEventListener("click", () => openDM(it.author));
   $("#detailBody").querySelector("[data-share]").addEventListener("click", () => { navigator.clipboard?.writeText(location.href.split("?")[0] + "?view=detail&id=" + it.id).catch(() => {}); toast("🔗 链接已复制，快去分享吧"); });
   $("#detailBody").querySelector("[data-report]").addEventListener("click", () => openReport(it));
+  /* 评论回评：点击“回复”→ 指示条出现 → 发送即挂到对应顶层评论下 */
+  const showReplyBar = () => {
+    const bar = $("#cmtReplyBar");
+    if (!bar) return;
+    if (cmtReply) { bar.querySelector("span").textContent = "回复 @" + cmtReply.name; bar.hidden = false; }
+    else bar.hidden = true;
+  };
+  $("#cmtList").addEventListener("click", (e) => {
+    const l = e.target.closest("[data-creply]");
+    if (!l || !l.dataset.creply) return;
+    cmtReply = { top: +l.dataset.ctop, name: l.dataset.cname, isTop: l.dataset.istop === "1" };
+    showReplyBar();
+    const inp = $("#cmtInput"); if (inp) inp.focus();
+  });
+  $("#cmtReplyBar").addEventListener("click", (e) => {
+    if (!e.target.closest("[data-ccancel]")) return;
+    cmtReply = null; showReplyBar();
+  });
   const sendCmt = async () => {
-    const v = $("#cmtInput").value.trim(); if (!v) return;
-    if (DB.isOnline() && it.dbid) { try { const u = await DB.uid(); await DB.insertWorkComment(it.dbid, v, u); } catch (e2) { toast("评论同步失败：" + (e2.message || e2)); return; } }
-    it.comments.unshift({ a: ME, t: v, time: "刚刚" });
-    setHTML($("#cmtList"), it.comments.map(cmtHTML).join(""));
+    let v = $("#cmtInput").value.trim(); if (!v) return;
+    const parent = cmtReply;
+    if (parent && !parent.isTop) v = "@" + parent.name + " " + v;
+    const parentId = parent ? parent.top : null;
+    let newId = null, u = null;
+    if (DB.isOnline() && it.dbid) {
+      try { u = await DB.uid(); newId = await DB.insertWorkComment(it.dbid, v, u, parentId || undefined); }
+      catch (e2) {
+        /* 数据库还没有 parent_id 字段时降级为普通评论发送 */
+        if (/parent_id/i.test(String(e2.message))) { try { u = u || await DB.uid(); newId = await DB.insertWorkComment(it.dbid, v, u); } catch (e3) { toast("评论同步失败：" + (e3.message || e3)); return; } }
+        else { toast("评论同步失败：" + (e2.message || e2)); return; }
+      }
+    }
+    it.comments.unshift({ id: newId, a: ME, t: v, time: "刚刚", parent_id: parentId, uid: u });
+    setHTML($("#cmtList"), cmtTreeHTML(it.comments));
     $("#cmtCnt").textContent = it.comments.length + " 条";
     $("#cmtInput").value = "";
-    toast("💬 评论已发布");
+    cmtReply = null; showReplyBar();
+    toast(parent ? "↩︎ 回复已发布" : "💬 评论已发布");
+    if (parent) {
+      const targetUid = DB.uidOf(parent.name);
+      if (DB.isOnline() && targetUid && targetUid !== u) DB.pushNotif(targetUid, { ico: "💬", bg: "--accent-soft", text: ME + " 回复了你在《" + it.title + "》下的评论", go: "?view=detail&id=" + it.dbid });
+    }
   };
   $("#cmtSend").addEventListener("click", sendCmt);
   $("#cmtInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendCmt(); });
@@ -854,7 +904,8 @@ function postHTML(p, i) {
       <button class="pa" data-share-post="${p.id}">🔗 分享</button>
     </div>
     <div class="comments${feedState.open.has(p.id) ? " open" : ""}" id="cmts-${p.id}">
-      ${p.comments.map((c) => { const [cg1, cg2] = grad(c.a.length % GRADS.length); return `<div class="cmt" style="--g1:${cg1};--g2:${cg2}"><i>${esc(c.a[0])}</i><div class="c-bubble"><b>${esc(c.a)}</b><p>${esc(c.t)}</p><small>${c.time || "刚刚"}</small></div></div>`; }).join("")}
+      ${cmtTreeHTML(p.comments, p.id)}
+      <div class="reply-bar" id="frb-${p.id}" hidden><span></span><button data-fcancel="${p.id}" type="button">取消回复 ×</button></div>
       <div class="cmt-input"><input placeholder="回复 ${esc(p.a)}…（回车发送）" data-cmt-input="${p.id}"><button class="btn btn-primary" style="height:38px;padding:0 15px" data-cmt-send="${p.id}">发送</button></div>
     </div>
   </article>`;
@@ -1648,6 +1699,17 @@ $view("community").addEventListener("click", (e) => {
   }
   const cp = e.target.closest("[data-cmt-post]");
   if (cp) { const id = +cp.dataset.cmtPost; feedState.open.has(id) ? feedState.open.delete(id) : feedState.open.add(id); $("#cmts-" + id).classList.toggle("open"); return; }
+  const fr = e.target.closest("[data-creply]");
+  if (fr && fr.dataset.fpid) {
+    if (!ME) { openLogin("login"); toast("请先登录后再回复"); return; }
+    feedReply = { pid: +fr.dataset.fpid, top: +fr.dataset.ctop, name: fr.dataset.cname, isTop: fr.dataset.istop === "1" };
+    const bar = $("#frb-" + fr.dataset.fpid);
+    if (bar) { bar.querySelector("span").textContent = "回复 @" + feedReply.name; bar.hidden = false; }
+    const inp = $(`[data-cmt-input="${fr.dataset.fpid}"]`); if (inp) inp.focus();
+    return;
+  }
+  const fcn = e.target.closest("[data-fcancel]");
+  if (fcn) { feedReply = null; const bar = $("#frb-" + fcn.dataset.fcancel); if (bar) bar.hidden = true; return; }
   const cs = e.target.closest("[data-cmt-send]");
   if (cs) { sendFeedCmt(+cs.dataset.cmtSend); return; }
   const oi = e.target.closest("[data-open-item]");
@@ -1661,15 +1723,28 @@ $view("community").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && e.target.id === "compText") sendFeedPost();
 });
 $view("community").addEventListener("input", (e) => { if (e.target.id === "compText") $("#composer").classList.toggle("has-text", e.target.value.trim().length > 0); });
+let feedReply = null; // { pid, top, name, isTop }
 function sendFeedCmt(id) {
   const p = FEED.find((x) => x.id === id);
   const input = $(`[data-cmt-input="${id}"]`);
-  const v = input.value.trim(); if (!v) return;
-  p.comments.unshift({ a: ME, t: v, time: "刚刚" });
-  feedState.open.add(id);
-  if (DB.isOnline() && p.dbid) { const u = DB.uidOf(ME); DB.insertPostComment(p.dbid, v, u).catch((e) => toast("评论同步失败：" + (e.message || e))); }
-  renderCommunity();
-  toast("💬 评论已发布");
+  let v = input.value.trim(); if (!v) return;
+  const rep = feedReply && feedReply.pid === id ? feedReply : null;
+  if (rep && !rep.isTop) v = "@" + rep.name + " " + v;
+  const parentId = rep ? rep.top : null;
+  const uid = DB.uidOf(ME);
+  const finish = (newId) => {
+    p.comments.push({ id: newId, a: ME, t: v, time: "刚刚", parent_id: parentId, uid });
+    feedState.open.add(id);
+    feedReply = null;
+    renderCommunity();
+    toast(rep ? "↩︎ 回复已发布" : "💬 评论已发布");
+    if (rep) {
+      const targetUid = DB.uidOf(rep.name);
+      if (DB.isOnline() && targetUid && targetUid !== uid) DB.pushNotif(targetUid, { ico: "💬", bg: "--accent-soft", text: ME + " 回复了你在动态下的评论", go: "#/community" });
+    }
+  };
+  if (DB.isOnline() && p.dbid && uid) DB.insertPostComment(p.dbid, v, uid, parentId || undefined).then(finish).catch((e) => toast("评论同步失败：" + (e.message || e)));
+  else finish(null);
 }
 function sendFeedPost() {
   const v = $("#compText").value.trim(); if (!v) return;
@@ -1811,7 +1886,7 @@ async function loadPublic() {
   });
   const [comments, reviews, feed] = await Promise.all([DB.fetchAllWorkComments(), DB.fetchAllReviews(), DB.fetchFeed(MYUID, relTime)]);
   ITEMS.forEach((it) => { it.comments = []; it.reviews = []; });
-  comments.forEach((c) => { const it = ITEMS.find((x) => x.dbid === c.work_id); if (it) it.comments.push({ a: DB.nickOf(c.author) || "?", t: c.body, time: (c.created_at || "").slice(0, 10) }); });
+  comments.forEach((c) => { const it = ITEMS.find((x) => x.dbid === c.work_id); if (it) it.comments.push({ id: c.id, a: DB.nickOf(c.author) || "?", t: c.body, time: (c.created_at || "").slice(0, 10), parent_id: c.parent_id || null, uid: c.author }); });
   reviews.forEach((r) => { const it = ITEMS.find((x) => x.dbid === r.work_id); if (it) it.reviews.push({ a: r.profiles?.nickname || "?", s: r.rating, t: r.body, time: (r.created_at || "").slice(0, 10) }); });
   ITEMS.forEach((it) => {
     it.ratingCnt = it.reviews.length;

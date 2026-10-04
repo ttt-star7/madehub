@@ -224,15 +224,14 @@ window.DB = (function () {
       text: row.body, tags: row.tags || [], item: row.item_id || null,
       likes: (row.post_likes || []).length,
       liked: myUid ? (row.post_likes || []).some((l) => l.user_id === myUid) : false,
-      comments: (row.post_comments || []).map((c) => ({ a: c.profiles?.nickname || "?", t: c.body, time: rel(c.created_at) })),
+      comments: (row.post_comments || []).map((c) => ({ id: c.id, a: c.profiles?.nickname || "?", t: c.body, time: rel(c.created_at), parent_id: c.parent_id || null, uid: c.author })),
     };
   }
   let GRADS_FALLBACK = 12; // 哈希基数（真实渐变由 UI 层按昵称推导）
   async function fetchFeed(myUid, rel) {
     const { data, error } = await client.from("feed_posts").select(FEED_SEL).order("created_at", { ascending: false }).limit(60);
     if (error) throw error;
-    return (data || []).map((r) => feedToApp(r, myUid, rel));
-  }
+    return (data || []).map((r) => feedToApp(r, myUid, rel));  }
   async function insertFeedPost(p, authorUid) {
     const { data, error } = await client.from("feed_posts").insert({
       author: authorUid, topic: p.topic || "动态", body: p.text, tags: p.tags || [], item_id: p.item || null,
@@ -241,7 +240,14 @@ window.DB = (function () {
     return data.id;
   }
   async function togglePostLike(pid) { const { data, error } = await client.rpc("toggle_post_like", { pid }); if (error) throw error; return data; }
-  async function insertPostComment(pid, body, authorUid) { const { error } = await client.from("post_comments").insert({ post_id: pid, body, author: authorUid }); if (error) throw error; }
+  async function insertPostComment(pid, body, authorUid, parentId) {
+    const row = { post_id: pid, body, author: authorUid };
+    if (parentId) row.parent_id = parentId;
+    const { data, error } = await client.from("post_comments").insert(row).select("id").single();
+    if (error && /parent_id/i.test(String(error.message))) { const r2 = await client.from("post_comments").insert({ post_id: pid, body, author: authorUid }).select("id").single(); if (r2.error) throw r2.error; return r2.data.id; }
+    if (error) throw error;
+    return data.id;
+  }
 
   /* ---------- 作品评论 ---------- */
   async function fetchWorkComments(wid) {
@@ -249,7 +255,13 @@ window.DB = (function () {
     if (error) throw error;
     return (data || []).map((c) => ({ a: c.profiles?.nickname || "?", t: c.body, time: (c.created_at || "").slice(0, 10) }));
   }
-  async function insertWorkComment(wid, body, authorUid) { const { error } = await client.from("work_comments").insert({ work_id: wid, body, author: authorUid }); if (error) throw error; }
+  async function insertWorkComment(wid, body, authorUid, parentId) {
+    const row = { work_id: wid, body, author: authorUid };
+    if (parentId) row.parent_id = parentId;
+    const { data, error } = await client.from("work_comments").insert(row).select("id").single();
+    if (error) throw error;
+    return data.id;
+  }
 
   /* ---------- 关注 ---------- */
   async function fetchFollowing(uid) {
