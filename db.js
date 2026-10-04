@@ -380,6 +380,12 @@ window.DB = (function () {
     if (error) throw error;
     return (data || []).map((m) => ({ id: m.id, senderUid: m.sender, t: m.body, time: (m.created_at || "").slice(5, 16).replace("T", " ") }));
   }
+  /* 全量下载记录（周期榜数据源；download_log 表不存在时抛错由调用方降级） */
+  async function fetchAllDownloads() {
+    const { data, error } = await client.from("download_log").select("work_id,created_at").order("created_at", { ascending: false }).limit(5000);
+    if (error) throw error;
+    return data || [];
+  }
   /* 实时订阅私信（需在 Supabase 把 messages 表加入 supabase_realtime publication；未开启时自动退回轮询） */
   async function subscribeMessages(onMsg) {
     if (!online) return false;
@@ -407,6 +413,6 @@ window.DB = (function () {
     fetchNotifs, pushNotif, markAllNotifsRead,
     fetchMessages, sendMessage, uploadMedia,
     fetchSocial, fetchAllWorkComments, fetchAllReviews, fetchMyMessages,
-    fetchNewIncoming, subscribeMessages, parseShareLink,
+    fetchNewIncoming, subscribeMessages, parseShareLink, fetchAllDownloads,
   };
 })();

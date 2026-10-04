@@ -130,6 +130,14 @@ function renderGrid() {
   $("#grid").innerHTML = list.map((it, i) => cardHTML(it, i)).join("");
   $("#empty").hidden = list.length > 0;
   renderActiveFilters();
+  updateHeroStats();
+}
+/* 首页统计：全部来自数据库真实数据 */
+function updateHeroStats() {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = Number(v || 0).toLocaleString("zh-CN"); };
+  set("heroWorks", ITEMS.length);
+  set("heroCreators", Object.keys(USERS).length);
+  set("heroDls", ITEMS.reduce((s, x) => s + (x.downloads || 0), 0));
 }
 
 function renderActiveFilters() {
@@ -295,7 +303,7 @@ function openDetail(it) {
     <aside class="detail-info" style="--g1:${g1};--g2:${g2}">
       <div class="detail-tags">${statusChip(it)}${it.tags.map((t) => `<span class="mini-chip mini-chip-tag">${esc(t)}</span>`).join("")}</div>
       <h2 class="detail-title">${esc(it.title)}</h2>
-      <div class="detail-author"><i data-goto-user="${esc(it.author)}" style="cursor:pointer">${esc(it.author[0])}</i><div><b data-goto-user="${esc(it.author)}" style="cursor:pointer">${esc(it.author)}</b><small>认证创作者 · ${fmtDl(it.downloads)} 次下载</small></div>${it.author !== ME ? `<button class="follow-btn" data-dm title="发私信">✉️</button>` : ""}<button class="follow-btn" data-follow>${FOLLOWING.has(it.author) ? "已关注 ✓" : "+ 关注"}</button></div>
+      <div class="detail-author"><i data-goto-user="${esc(it.author)}" style="cursor:pointer">${esc(it.author[0])}</i><div><b data-goto-user="${esc(it.author)}" style="cursor:pointer">${esc(it.author)}</b><small>${(USERS[it.author] && USERS[it.author].verified) ? "认证创作者 · " : ""}${fmtDl(it.downloads)} 次下载</small></div>${it.author !== ME ? `<button class="follow-btn" data-dm title="发私信">✉️</button>` : ""}<button class="follow-btn" data-follow>${FOLLOWING.has(it.author) ? "已关注 ✓" : "+ 关注"}</button></div>
       <p class="detail-desc">${esc(it.desc)}</p>
       <div style="display:flex;gap:16px"><span class="mini-link" data-share>🔗 分享作品</span><span class="mini-link" data-report>⚠️ 举报</span></div>
       <ul class="meta-list">
@@ -817,36 +825,15 @@ function route() {
 }
 window.addEventListener("hashchange", route);
 
-/* ---- 排行榜 ---- */
+/* ---- 排行榜（真实下载量：日/周/月/年基于 download_log，神榜为累计） ---- */
 const rankState = { period: "week", tag: "", q: "" };
 const PERIODS = [["day", "日榜"], ["week", "周榜"], ["month", "月榜"], ["year", "年榜"], ["hall", "神榜"]];
-function dlFor(it, p) {
-  const s = it.id % 89 + 7;
-  const d = Math.max(3, Math.round(it.downloads / 420) + s * 2);
-  if (p === "day") return d;
-  if (p === "week") return d * 6 + s;
-  if (p === "month") return d * 24 + s * 11;
-  return Math.round(it.downloads * 0.52) + s * 66;
-}
 let HALL = null;
 function hallList() {
   if (HALL) return HALL;
-  const real = ITEMS.map((it) => ({ title: it.title, author: it.author, tags: it.tags, emoji: it.emoji, g: it.g, dl: it.downloads, id: it.id, price: it.price }));
-  const pre = ["AI", "超能", "量子", "星尘", "灵犀", "妙笔", "天工", "闪念"];
-  const kind = ["笔记助手", "视频剪辑器", "翻译官", "画板", "日程管家", "抠图工具", "语音转写", "简历工场", "壁纸引擎", "代码伴侣"];
-  const authors = ["云上工作室", "白露", "比特猫", "南山客", "软糖软体", "山与海", "像素青蛙", "深夜写代码"];
-  let seed = 7;
-  const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
-  const synth = [];
-  for (let i = 0; i < 40; i++) synth.push({
-    title: pre[i % pre.length] + kind[(i * 7 + 3) % kind.length],
-    author: authors[i % authors.length],
-    tags: [PRESET_TAGS[(i * 5) % PRESET_TAGS.length], PRESET_TAGS[(i * 3 + 1) % PRESET_TAGS.length]],
-    emoji: ["🚀", "🎨", "🧠", "📦", "🔧", "🎹", "📷", "🛠️"][i % 8],
-    g: i % GRADS.length,
-    dl: Math.round(14800 - i * 255 - rnd() * 170),
-  });
-  HALL = [...real, ...synth].sort((a, b) => b.dl - a.dl).slice(0, 50);
+  /* 神榜只收录真实作品，按累计下载量排序 */
+  HALL = ITEMS.map((it) => ({ title: it.title, author: it.author, tags: it.tags, emoji: it.emoji, g: it.g, dl: it.downloads, id: it.id, price: it.price, linkKind: it.linkKind }))
+    .sort((a, b) => b.dl - a.dl).slice(0, 50);
   return HALL;
 }
 function rankRows(list, isHall) {
@@ -854,7 +841,6 @@ function rankRows(list, isHall) {
   return list.map((x, i) => {
     const [g1, g2] = grad(x.g);
     const crown = isHall && i === 0;
-    const price = x.price == null ? "神榜收录" : x.price === 0 ? "免费" : "¥" + x.price;
     return `<div class="rank-row${crown ? " crown" : ""}" style="--i:${Math.min(i, 18)};--g1:${g1};--g2:${g2};position:relative" ${x.id ? `data-open="${x.id}"` : 'data-dead="1"'}>
       ${crown ? '<span class="rk-crown">👑</span>' : ""}
       <span class="rk ${i < 3 ? "top" + (i + 1) : ""}">${String(i + 1).padStart(2, "0")}</span>
@@ -862,28 +848,39 @@ function rankRows(list, isHall) {
       <div class="rank-main"><b>${esc(x.title)}</b><small>${esc(x.author)} · ${(x.tags || []).map(esc).join(" / ")}</small>
         <div class="rank-bar"><i style="--w:${Math.max(3, Math.round(x.dlShow / max * 100))}%;--i:${Math.min(i, 18)}"></i></div>
       </div>
-      <div class="rank-num"><b>${fmtDl(x.dlShow)}</b><small>${price}</small></div>
+      <div class="rank-num"><b>${fmtDl(x.dlShow)}</b><small>${x.linkKind === "url" ? "网址作品" : "网盘资源"}</small></div>
     </div>`;
   }).join("");
 }
 function updateRankList() {
   const el = $view("rank");
   const isHall = rankState.period === "hall";
-  let list;
-  if (isHall) list = hallList().map((x) => ({ ...x, dlShow: x.dl }));
-  else list = ITEMS.filter((it) => !rankState.tag || it.tags.includes(rankState.tag)).map((it) => ({ ...it, dlShow: dlFor(it, rankState.period) })).sort((a, b) => b.dlShow - a.dlShow);
-  if (isHall && rankState.tag) list = list.filter((x) => (x.tags || []).includes(rankState.tag));
+  const cutoffs = { day: Date.now() - 864e5, week: Date.now() - 7 * 864e5, month: Date.now() - 30 * 864e5, year: Date.now() - 365 * 864e5 };
+  let list, sub;
+  if (isHall) {
+    list = hallList().map((x) => ({ ...x, dlShow: x.dl }));
+    sub = "历代下载量最高的作品 · 神榜永久收录";
+  } else if (DL_LOG) {
+    const cutoff = cutoffs[rankState.period];
+    list = ITEMS.map((it) => ({ ...it, dlShow: DL_LOG.filter((r) => r.work_id === it.dbid && new Date(r.created_at).getTime() >= cutoff).length }))
+      .filter((x) => x.dlShow > 0).sort((a, b) => b.dlShow - a.dlShow);
+    sub = { day: "近 24 小时", week: "近 7 天", month: "近 30 天", year: "近 365 天" }[rankState.period] + "的真实下载量排行";
+  } else {
+    list = ITEMS.map((it) => ({ ...it, dlShow: it.downloads })).sort((a, b) => b.dlShow - a.dlShow);
+    sub = "按累计下载量排行 · 运行 supabase-periods.sql 后启用日/周/月/年榜";
+  }
+  if (rankState.tag) list = list.filter((x) => (x.tags || []).includes(rankState.tag));
+  const subEl = $("#rankSub"); if (subEl) subEl.textContent = sub;
   const q = rankState.q.trim();
   const chips = ["全部", ...PRESET_TAGS.filter((t) => !q || t.includes(q.toLowerCase()))].slice(0, 12);
   const chipBox = $("#rankChips");
   if (chipBox) chipBox.innerHTML = chips.map((t) => `<button class="chip${t === rankState.tag ? " on" : ""}" data-rtag="${t}">${t}</button>`).join("");
-  $("#rankList").innerHTML = list.length ? rankRows(list, isHall) : `<div class="empty" style="padding:40px 0"><div class="empty-emoji">🔍</div><p>该标签下暂无上榜作品</p></div>`;
+  const emptyTip = isHall ? "神榜还没有收录作品 · 上传并积累下载量吧" : "该周期内暂无下载记录";
+  $("#rankList").innerHTML = list.length ? rankRows(list, isHall) : `<div class="empty" style="padding:40px 0"><div class="empty-emoji">🔍</div><p>${emptyTip}</p></div>`;
 }
 function renderRank() {
   const el = $view("rank");
-  const isHall = rankState.period === "hall";
-  const pname = { day: "今日", week: "本周", month: "本月", year: "本年" }[rankState.period];
-  el.innerHTML = `<h2 class="view-title">🏆 排行榜</h2><p class="view-sub">${isHall ? "历代下载量最高的 50 件作品 · 神榜永久收录" : pname + "下载量排行 · 每 5 分钟刷新（演示数据）"}</p>
+  el.innerHTML = `<h2 class="view-title">🏆 排行榜</h2><p class="view-sub" id="rankSub"></p>
     <div class="rank-toolbar">
       <div class="rank-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         <input id="rankQ" placeholder="搜索标签，如：翻译 / 素材…" value="${esc(rankState.q)}"></div>
@@ -891,7 +888,16 @@ function renderRank() {
     </div>
     <div class="rank-periods">${PERIODS.map(([k, n]) => `<button class="tab${k === rankState.period ? " on" : ""}" data-rp="${k}">${n}</button>`).join("")}</div>
     <div class="rank-list" id="rankList"></div>`;
+  ensureDlLog().then(() => updateRankList());
   updateRankList();
+}
+/* 下载记录（真实周期榜数据源），表不存在时优雅降级为累计榜 */
+let DL_LOG = null, DL_LOG_TRIED = false;
+async function ensureDlLog() {
+  if (DL_LOG_TRIED) return DL_LOG;
+  DL_LOG_TRIED = true;
+  try { DL_LOG = await DB.fetchAllDownloads(); } catch (e) { DL_LOG = null; }
+  return DL_LOG;
 }
 
 /* ---- 社区 ---- */
@@ -931,13 +937,21 @@ function renderCommunity() {
         <div id="feedList">${posts.map(postHTML).join("")}</div>
       </div>
       <aside>
-        <div class="side-panel"><h4>🔥 热门话题</h4>${TOPICS.map((t) => `<div class="topic-row" data-topic="${t.n}"><span># ${t.n}</span><b>${t.hot} 条</b></div>`).join("")}</div>
-        <div class="side-panel"><h4>⭐ 本周之星</h4>
-          <div style="display:flex;gap:11px;align-items:center;cursor:pointer" data-goto-user="林小满">
-            <i style="width:46px;height:46px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-style:normal;background:linear-gradient(135deg,#6366F1,#A855F7)">林</i>
-            <div><b style="font-size:14px;display:block">林小满</b><small style="color:var(--ink3);font-size:12px;line-height:1.6">翻译 & 效率工具作者<br>本周获赞 86 · 粉丝 1,204</small></div>
+        <div class="side-panel"><h4>🔥 热门话题</h4>${TOPICS.map((t) => { const n = FEED.filter((p) => p.topic === t.n).length; return `<div class="topic-row" data-topic="${t.n}"><span># ${t.n}</span><b>${n} 条</b></div>`; }).join("")}</div>
+        ${(() => {
+          const tally = {};
+          FEED.forEach((p) => { tally[p.a] = tally[p.a] || { likes: 0, posts: 0 }; tally[p.a].posts++; tally[p.a].likes += p.likes + (p.liked ? 1 : 0); });
+          const best = Object.entries(tally).sort((a, b) => b[1].likes - a[1].likes)[0];
+          if (!best || best[1].likes <= 0 || !USERS[best[0]]) return "";
+          const starName = best[0], su = USERS[starName];
+          const [sg1, sg2] = grad(su.g || 0);
+          return `<div class="side-panel"><h4>⭐ 社区之星</h4>
+          <div style="display:flex;gap:11px;align-items:center;cursor:pointer" data-goto-user="${esc(starName)}">
+            <i style="width:46px;height:46px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-style:normal;background:linear-gradient(135deg,${sg1},${sg2})">${esc(starName[0])}</i>
+            <div><b style="font-size:14px;display:block">${esc(starName)}</b><small style="color:var(--ink3);font-size:12px;line-height:1.6">${esc(su.bio || "").slice(0, 22)}<br>获赞 ${best[1].likes} · 粉丝 ${(su.followers || 0).toLocaleString()}</small></div>
           </div>
-        </div>
+        </div>`;
+        })()}
         <div class="side-panel"><h4>📌 社区规范</h4><p style="font-size:12.5px;color:var(--ink3);line-height:1.8">友善交流，尊重每一位创作者；分享教程请注明可复现步骤；禁止发布与 AI 造物无关的内容。</p></div>
       </aside>
     </div>`;
@@ -1259,22 +1273,16 @@ function openPanel(title, html, wide) {
 /* ---- 作品「数据」看板（14 天趋势 + 渠道） ---- */
 function openItemData(mid) {
   const e = MY.items.find((x) => x.mid === mid); if (!e) return;
-  let seed = [...mid].reduce((s, c) => s + c.charCodeAt(0), 7);
-  const days = Array.from({ length: 14 }, (_, i) => { seed = (seed * 31 + 11) % 997; return seed / 997; });
-  const max = Math.max(...days, 1);
-  const conv = e.views ? (e.downloads / e.views * 100).toFixed(1) : "0.0";
+  const it = ITEMS.find((x) => x.dbid === e.dbid) || ITEMS.find((x) => x.title === e.title) || {};
+  const cmtCount = (it.comments || []).length;
   openPanel("数据看板 · " + e.title, `
     <div class="dkpis">
-      <div class="dkpi" style="--i:0"><small>浏览量</small><b>${fmtDl(e.views)}</b></div>
-      <div class="dkpi" style="--i:1"><small>下载量</small><b>${fmtDl(e.downloads)}</b></div>
-      <div class="dkpi" style="--i:2"><small>累计收益</small><b>¥${e.revenue.toLocaleString()}</b></div>
-      <div class="dkpi" style="--i:3"><small>浏览→下载</small><b>${conv}%</b></div>
+      <div class="dkpi" style="--i:0"><small>浏览量</small><b>${fmtDl(e.views || 0)}</b></div>
+      <div class="dkpi" style="--i:1"><small>下载量</small><b>${fmtDl(e.downloads || 0)}</b></div>
+      <div class="dkpi" style="--i:2"><small>评论数</small><b>${cmtCount}</b></div>
+      <div class="dkpi" style="--i:3"><small>获赞</small><b>${it.likes || 0}</b></div>
     </div>
-    <div class="dchart">${days.map((v, i) => `<div class="dbar" title="第 ${i + 1} 天" style="--h:${Math.max(6, Math.round(v / max * 100))}%;--i:${i}"><i></i></div>`).join("")}</div>
-    <div class="dlegend">近 14 天下载趋势 · 每日相对量</div>
-    <div class="ul-row3" style="--i:0"><span class="cov" style="background:var(--accent-soft)">🌐</span><div class="ui"><b>网盘打开次数</b><small>近 30 天 · 打开率 ${Math.min(99, 62 + e.downloads % 30)}%</small></div><span class="num">${fmtDl(Math.round(e.downloads * 1.18))}</span></div>
-    <div class="ul-row3" style="--i:1"><span class="cov" style="background:var(--paid-bg)">❤️</span><div class="ui"><b>收藏数</b><small>来自作品页</small></div><span class="num">${fmtDl(Math.round(e.downloads * 0.42))}</span></div>
-    <div class="ul-row3" style="--i:2"><span class="cov" style="background:var(--warn-bg)">💬</span><div class="ui"><b>评论数</b><small>社区与详情页</small></div><span class="num">${(e.downloads % 17) + 2}</span></div>
+    <p style="font-size:12.5px;color:var(--ink3);margin-top:14px">以上均为平台记录的真实数据，随使用实时累积。</p>
   `, true);
 }
 
@@ -1458,7 +1466,7 @@ function renderStudio(tab) {
   const tabs = [["overview", "概览"], ["works", "我的作品"], ["settings", "设置"]];
   if (!tabs.some(([k]) => k === tab)) tab = "overview";
   el.innerHTML = `<div class="studio-head">
-      <div><h2>创作者中心</h2><p>欢迎回来，澄 · 上次登录 今天 08:12</p></div>
+      <div><h2>创作者中心</h2><p>欢迎回来，${esc(ME)}</p></div>
       <button class="btn btn-primary" id="studioUpload">＋ 上传新作品</button>
     </div>
     <div class="tabs" style="margin-bottom:20px">${tabs.map(([k, n]) => `<button class="tab${k === tab ? " on" : ""}" data-stab="${k}">${n}</button>`).join("")}</div>
@@ -1947,7 +1955,6 @@ async function loadPublic() {
     it.rating = it.ratingCnt ? (it.reviews.reduce((s, r) => s + r.s, 0) / it.ratingCnt).toFixed(1) : 5;
   });
   FEED.length = 0; FEED.push(...feed);
-  TOPICS.forEach((t) => { t.hot = FEED.filter((p) => p.topic === t.n).length * 8 + 6; });
 }
 async function loadMyData() {
   if (!MYUID) return;
