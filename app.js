@@ -617,7 +617,7 @@ function suggestTags(q) {
 function renderPreview() {
   const title = $("#upTitle").value.trim() || "你的作品标题";
   const custom = up.cover === 8 && up.customCover;
-  const it = { id: 0, title, emoji: custom ? "🖼️" : COVERS[up.cover][0], g: custom ? 0 : COVERS[up.cover][1], coverURL: custom ? up.customCover : null, tags: up.tags, price: 0, author: "澄", downloads: 0 };
+  const it = { id: 0, title, emoji: custom ? "🖼️" : COVERS[up.cover][0], g: custom ? 0 : COVERS[up.cover][1], coverURL: custom ? up.customCover : null, tags: up.tags, price: 0, author: ME, downloads: 0 };
   $("#previewMini").innerHTML = `<div class="hint">📈 发布后卡片预览</div><div style="max-width:260px">${cardHTML(it)}</div>`;
 }
 function updateWizard() {
@@ -816,7 +816,11 @@ function route() {
   $$(".nav a").forEach((a) => a.classList.toggle("active", a.dataset.nav === view));
   if (view === "rank") renderRank();
   if (view === "community") renderCommunity();
-  if (view === "profile") renderProfile(decodeURIComponent(seg[1] || ME), q.get("tab") || "works");
+  if (view === "profile") {
+    const pname = seg[1] ? decodeURIComponent(seg[1]) : ME;
+    if (!pname) { openLogin("login"); toast("请先登录后再查看个人主页"); location.hash = "#/"; return; }
+    renderProfile(pname, q.get("tab") || "works");
+  }
   if (view === "studio") renderStudio(q.get("tab") || studioTab);
   if (view === "messages") renderMessages(q.get("to") ? decodeURIComponent(q.get("to")) : null);
   const msgBtn = $("#msgBtn"); if (msgBtn) msgBtn.classList.toggle("active", view === "messages");
@@ -930,7 +934,7 @@ function renderCommunity() {
     <div class="feed-layout">
       <div>
         <div class="composer" id="composer">
-          <div class="composer-row"><i>澄</i><textarea id="compText" rows="1" placeholder="分享你的造物心得、求助或展示新作品…"></textarea></div>
+          <div class="composer-row"><i>${esc(ME ? ME[0] : "未")}</i><textarea id="compText" rows="1" placeholder="分享你的造物心得、求助或展示新作品…"></textarea></div>
           <div class="comp-foot"><span class="hint">Ctrl + Enter 快速发布 · 请遵守社区规范</span><button class="btn btn-primary" id="compSend" style="height:36px">发布动态</button></div>
         </div>
         <div class="chips" style="margin-bottom:18px">${["全部", ...TOPICS.map((t) => t.n)].map((t) => `<button class="chip${t === feedState.topic ? " on" : ""}" data-topic="${t}">${t}</button>`).join("")}</div>
@@ -1456,7 +1460,7 @@ function renderStudio(tab) {
   studioTab = tab;
   const el = $view("studio");
   if (!studioBooted && !document.documentElement.classList.contains("flat")) {
-    el.innerHTML = `<div class="studio-head"><div><h2>创作者中心</h2><p>欢迎回来，澄</p></div></div>
+    el.innerHTML = `<div class="studio-head"><div><h2>创作者中心</h2><p>欢迎回来，${esc(ME || "")}</p></div></div>
       <div class="stat-cards">${[0, 1, 2, 3].map(() => `<div class="stat-card"><small><span class="sk" style="display:inline-block;width:60px;height:12px"></span></small><div class="num"><span class="sk" style="display:inline-block;width:110px;height:26px"></span></div></div>`).join("")}</div>
       <div class="panel"><div class="sk-row"><span class="sk" style="width:42px;height:42px;border-radius:9px"></span><span class="sk" style="width:30%;height:14px"></span><span class="sk" style="width:14%;height:14px"></span></div><div class="sk-row"><span class="sk" style="width:42px;height:42px;border-radius:9px"></span><span class="sk" style="width:24%;height:14px"></span><span class="sk" style="width:18%;height:14px"></span></div></div>`;
     studioBooted = true;
@@ -1666,6 +1670,9 @@ function renderUserChip() {
   setHTML($("#userPop .user-pop-head"), ME
     ? `<i>${esc(ME[0])}</i><div><b>${esc(ME)}</b><small>${u.verified ? "认证创作者 · Lv.3" : "新用户 · Lv.1"}</small></div>`
     : `<i>未</i><div><b>未登录</b><small>登录后享受完整功能</small></div>`);
+  /* 个人主页链接始终指向当前登录用户（避免硬编码旧昵称） */
+  const mi = $("#miProfile");
+  if (mi) mi.setAttribute("href", ME ? "#/profile/" + encodeURIComponent(ME) : "#/profile");
 }
 
 /* ---- 顶栏交互：通知 / 用户菜单 / 主题 ---- */
