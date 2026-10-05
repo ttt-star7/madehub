@@ -401,6 +401,20 @@ window.DB = (function () {
     } catch (e) { console.warn("realtime subscribe failed:", e); return false; }
   }
 
+  /* 用户创作活跃度：其作品的评论 + 下载事件时间戳（真实数据） */
+  async function fetchActivity(uid) {
+    const ts = [];
+    try {
+      const dl = await client.from("download_log").select("created_at,works!inner(author)").eq("works.author", uid).limit(2000);
+      if (!dl.error) (dl.data || []).forEach((r) => ts.push(r.created_at));
+    } catch (_) {}
+    try {
+      const wc = await client.from("work_comments").select("created_at,works!inner(author)").eq("works.author", uid).limit(2000);
+      if (!wc.error) (wc.data || []).forEach((r) => ts.push(r.created_at));
+    } catch (_) {}
+    return ts;
+  }
+
   return {
     init, waitForReady, isOnline, uid, nickOf, uidOf, remember,
     getSession, signUp, signIn, signOut, onAuth, ensureNickname,

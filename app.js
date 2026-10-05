@@ -1045,7 +1045,7 @@ function mountBanner(el, u) {
 
 /* ---- 创作者主页 ---- */
 let profState = { name: ME, tab: "works" };
-function renderProfile(name, tab) {
+async function renderProfile(name, tab) {
   profState = { name, tab };
   const u = USERS[name] || { g: 4, bio: "这位创作者很神秘，什么都没有写。", verified: false, followers: 0, following: 0, joined: "2026" };
   const isSelf = name === ME;
@@ -1079,10 +1079,17 @@ function renderProfile(name, tab) {
   if (dls >= 1000) badges.push("🔥 千下俱乐部");
   if (u.followers >= 500) badges.push("⭐ 人气创作者");
   if ((u.joined || "").startsWith("2024")) badges.push("🌱 元老成员");
-  /* 活跃热力（基于昵称的确定性伪随机） */
-  let hseed = 0; for (const ch of name) hseed = (hseed + ch.charCodeAt(0)) % 997;
-  const heat = Array.from({ length: 24 }, (_, i) => { hseed = (hseed * 31 + i * 7 + 11) % 997; return hseed / 997; });
-  const activeDays = Math.round(heat.reduce((s, v) => s + (v > 0.35 ? 3 : v > 0.15 ? 1.5 : 0.4), 0));
+  /* 活跃热力：来自真实互动记录（作品评论 + 下载事件），按周聚合 */
+  const profileUid = DB.uidOf(name) || (isSelf ? MYUID : null);
+  const actTs = profileUid ? await DB.fetchActivity(profileUid).catch(() => []) : [];
+  const WEEK = 7 * 864e5, now = Date.now();
+  const weeks = Array.from({ length: 24 }, (_, i) => ({ start: now - (23 - i) * WEEK, n: 0 }));
+  actTs.forEach((iso) => {
+    const t = new Date(iso).getTime(); if (!t) return;
+    const idx = 24 - Math.ceil((now - t) / WEEK) - 1;
+    if (idx >= 0 && idx < 24) weeks[idx].n++;
+  });
+  const totalActs = weeks.reduce((s, w) => s + w.n, 0);
   const statTiles = [
     ["📦", "作品", its.length, "--accent-soft", "works"],
     ["⬇️", "总下载", dls, "--free-bg", "dl"],
@@ -1116,8 +1123,8 @@ function renderProfile(name, tab) {
     <div class="p-stats container">${statTiles}</div>
     <div class="container" style="margin-top:18px">
       <div class="panel" style="--i:5"><h3>创作活跃度 <span style="font-weight:500;font-size:12px;color:var(--ink3)">近 24 周</span></h3>
-        <div class="heat">${heat.map((v, i) => `<i style="--o:${(0.12 + v * 0.88).toFixed(2)};--i:${i}"></i>`).join("")}</div>
-        <div class="heat-legend"><span>少</span><span>活跃约 ${activeDays} 天</span><span>多</span></div>
+        <div class="heat">${weeks.map((w, i) => `<i style="--o:${w.n ? (0.25 + Math.min(0.75, w.n * 0.25)).toFixed(2) : "0.12"};--i:${i}" title="${w.n ? w.n + " 条互动" : "无互动"}"></i>`).join("")}</div>
+        <div class="heat-legend"><span>少</span><span>近 24 周互动 ${totalActs} 次</span><span>多</span></div>
       </div>
     </div>
     <div class="profile-inner container">
