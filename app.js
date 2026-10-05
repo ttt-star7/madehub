@@ -231,7 +231,7 @@ function starsHTML(v) { const f = Math.max(0, Math.min(5, Math.round(v))); retur
 function cmtHTML(c, opts = {}) {
   const [g1, g2] = grad(c.a.length % GRADS.length);
   const replyLink = ME ? `<a class="c-reply" data-creply="${c.id || ""}" ${opts.feed ? `data-fpid="${opts.feed}"` : ""} data-ctop="${c.parent_id || c.id || ""}" data-cname="${esc(c.a)}" data-istop="${c.parent_id ? 0 : 1}">回复</a>` : "";
-  return `<div class="cmt" style="--g1:${g1};--g2:${g2}"><i data-goto-user="${esc(c.a)}" style="cursor:pointer">${esc(c.a[0])}</i><div class="c-bubble"><b data-goto-user="${esc(c.a)}" style="cursor:pointer">${esc(c.a)}</b>${replyLink}<p>${esc(c.t)}</p><small>${c.time || "刚刚"}</small></div></div>`;
+  return `<div class="cmt" style="--g1:${g1};--g2:${g2}">${avHTML(c.a, 30)}<div class="c-bubble"><b data-goto-user="${esc(c.a)}" style="cursor:pointer">${esc(c.a)}</b>${replyLink}<p>${esc(c.t)}</p><small>${c.time || "刚刚"}</small></div></div>`;
 }
 /* 评论树：两级嵌套（回复一律挂到顶层评论下，正文自带 @前缀） */
 function cmtTreeHTML(comments, feedId) {
@@ -911,7 +911,7 @@ function postHTML(p, i) {
   const item = p.item ? ITEMS.find((x) => x.id === p.item) : null;
   const [ig1, ig2] = item ? grad(item.g) : [0, 0];
   return `<article class="post" style="--i:${i};--g1:${g1};--g2:${g2}">
-    <div class="post-head"><i data-goto-user="${esc(p.a)}">${esc(p.a[0])}</i><div><b data-goto-user="${esc(p.a)}">${esc(p.a)}</b><small>${p.time} · # ${p.topic}</small></div></div>
+    <div class="post-head">${avHTML(p.a, 38)}<div><b data-goto-user="${esc(p.a)}">${esc(p.a)}</b><small>${p.time} · # ${p.topic}</small></div></div>
     <div class="post-text">${esc(p.text)}</div>
     ${item ? `<div class="post-item" data-open-item="${item.id}" style="--g1:${ig1};--g2:${ig2}"><span class="cov">${item.emoji}</span><div><b>${esc(item.title)}</b><small>${item.price === 0 ? "免费" : "¥" + item.price} · ${fmtDl(item.downloads)} 下载</small></div><span style="margin-left:auto;color:var(--ink3)">›</span></div>` : ""}
     ${p.tags.length ? `<div class="post-tags">${p.tags.map((t) => `<span class="mini-chip mini-chip-tag"># ${esc(t)}</span>`).join("")}</div>` : ""}
@@ -934,7 +934,7 @@ function renderCommunity() {
     <div class="feed-layout">
       <div>
         <div class="composer" id="composer">
-          <div class="composer-row"><i>${esc(ME ? ME[0] : "未")}</i><textarea id="compText" rows="1" placeholder="分享你的造物心得、求助或展示新作品…"></textarea></div>
+          <div class="composer-row">${avHTML(ME, 36)}<textarea id="compText" rows="1" placeholder="分享你的造物心得、求助或展示新作品…"></textarea></div>
           <div class="comp-foot"><span class="hint">Ctrl + Enter 快速发布 · 请遵守社区规范</span><button class="btn btn-primary" id="compSend" style="height:36px">发布动态</button></div>
         </div>
         <div class="chips" style="margin-bottom:18px">${["全部", ...TOPICS.map((t) => t.n)].map((t) => `<button class="chip${t === feedState.topic ? " on" : ""}" data-topic="${t}">${t}</button>`).join("")}</div>
@@ -1660,15 +1660,38 @@ function resetLoginPanel() {
   loginModal.querySelector(".oauth-divider").hidden = false;
   loginModal.querySelector(".oauth-row").hidden = false;
 }
+/* ---------- 全局头像渲染：图片 / 生肖 emoji / 昵称首字 三种形态统一 ---------- */
+function avHTML(name, size = 38, cls = "") {
+  const u = USERS[name] || {};
+  const av = u.avatar || {};
+  const base = `width:${size}px;height:${size}px;border-radius:50%;display:inline-grid;place-items:center;flex-shrink:0;object-fit:cover;`;
+  const [g1, g2] = grad((USERS[name] || {}).g ?? 7);
+  if (av.type === "img" && av.url) return `<span class="${cls}" style="${base}overflow:hidden"><img src="${av.url}" alt="" style="width:100%;height:100%;object-fit:cover"></span>`;
+  if (av.type === "zodiac") {
+    const z = ZODIAC.find((x) => x[0] === av.v) || ZODIAC[0];
+    const [za, zb] = grad(z[2]);
+    return `<span class="${cls}" style="${base}background:linear-gradient(135deg,${za},${zb});font-size:${Math.round(size * 0.5)}px;text-shadow:0 1px 4px rgba(0,0,0,.28)">${z[1]}</span>`;
+  }
+  return `<span class="${cls}" style="${base}background:linear-gradient(135deg,${g1},${g2});color:#fff;font-weight:700;font-size:${Math.round(size * 0.42)}px">${esc((name || "?")[0])}</span>`;
+}
+function avatarStyle(name) {
+  const u = USERS[name] || {};
+  const av = u.avatar || {};
+  const [g1, g2] = grad((u.g ?? 7));
+  if (av.type === "img") return `background:#26262E`;
+  if (av.type === "zodiac") { const z = ZODIAC.find((x) => x[0] === av.v) || ZODIAC[0]; const [za, zb] = grad(z[2]); return `background:linear-gradient(135deg,${za},${zb})`; }
+  return `background:linear-gradient(135deg,${g1},${g2})`;
+}
 function renderUserChip() {
   const u = USERS[ME] || {};
   const av = u.avatar || {};
   const btn = $("#avatarBtn");
   if (!ME) { btn.textContent = "未"; btn.style.background = "linear-gradient(135deg,#9CA3AF,#6B7280)"; }
+  else if (av.type === "img") { btn.textContent = ""; btn.style.background = ""; setHTML(btn, `<img src="${av.url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`); }
   else if (av.type === "zodiac") { btn.textContent = ZODIAC.find((z) => z[0] === av.v)[1]; btn.style.background = ""; }
   else { btn.textContent = ME[0]; btn.style.background = ""; }
   setHTML($("#userPop .user-pop-head"), ME
-    ? `<i>${esc(ME[0])}</i><div><b>${esc(ME)}</b><small>${u.verified ? "认证创作者 · Lv.3" : "新用户 · Lv.1"}</small></div>`
+    ? avHTML(ME, 38) + `<div><b>${esc(ME)}</b><small>${u.verified ? "认证创作者 · Lv.3" : "新用户 · Lv.1"}</small></div>`
     : `<i>未</i><div><b>未登录</b><small>登录后享受完整功能</small></div>`);
   /* 个人主页链接始终指向当前登录用户（避免硬编码旧昵称） */
   const mi = $("#miProfile");
