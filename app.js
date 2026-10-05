@@ -812,6 +812,7 @@ function parseHash() {
 function route() {
   const { seg, q } = parseHash();
   const view = ({ "": "explore", rank: "rank", community: "community", profile: "profile", studio: "studio", messages: "messages" })[seg[0] || ""] || "explore";
+  closeAllModals(); /* 任何 hash 导航都视为离开：关掉详情/登录等弹窗，避免新页面渲染在弹窗后面被误认为"点了没反应" */
   if (view !== "profile") { bannerCleanup?.(); bannerCleanup = null; }
   $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + view));
   $$(".nav a").forEach((a) => a.classList.toggle("active", a.dataset.nav === view));
