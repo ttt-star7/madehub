@@ -644,6 +644,7 @@ function validateStep() {
   $("#stepNext").disabled = !ok;
   $("#stepHint").textContent = msg || $("#stepHint").textContent;
 }
+$("#upDisclaimer").addEventListener("change", () => validateStep());
 
 /* Step 1：网盘链接（自动识别平台） */
 const PANS = [
