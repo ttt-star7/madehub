@@ -1048,6 +1048,9 @@ function mountBanner(el, u) {
 let profState = { name: ME, tab: "works" };
 async function renderProfile(name, tab) {
   profState = { name, tab };
+  /* 立即清掉上一位用户的残留 DOM，避免网络取数期间闪现别人资料 */
+  $view("profile").innerHTML = `<div class="container"><div class="panel" style="--i:0;padding:44px 0;text-align:center"><div class="empty-emoji">⏳</div><p>正在加载 ${esc(name)} 的主页…</p></div></div>`;
+  $view("profile").hidden = false;
   const u = USERS[name] || { g: 4, bio: "这位创作者很神秘，什么都没有写。", verified: false, followers: 0, following: 0, joined: "2026" };
   const isSelf = name === ME;
   const its = ITEMS.filter((x) => x.author === name);
@@ -2052,6 +2055,7 @@ async function boot() {
       startDmLive();
     }
   } catch (e) { console.warn("数据加载失败：", e); $("#dbBanner").hidden = false; }
+  if (ME) renderUserChip();
   renderGrid(); updateMsgBadge(); route();
   afterBootAll();
 }
