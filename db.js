@@ -427,6 +427,6 @@ window.DB = (function () {
     fetchNotifs, pushNotif, markAllNotifsRead,
     fetchMessages, sendMessage, uploadMedia,
     fetchSocial, fetchAllWorkComments, fetchAllReviews, fetchMyMessages,
-    fetchNewIncoming, subscribeMessages, parseShareLink, fetchAllDownloads,
+    fetchNewIncoming, subscribeMessages, parseShareLink, fetchAllDownloads, fetchActivity,
   };
 })();
